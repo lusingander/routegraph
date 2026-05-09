@@ -43,15 +43,39 @@ func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 		switch stmt := stmt.(type) {
 		case *ast.DeclStmt:
 			analyzeDecl(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
+			analyzeDeclFuncCalls(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, stmt, visiting)
 		case *ast.AssignStmt:
 			analyzeAssign(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
 			collectRouteTable(routeTables, consts, stmt)
+			analyzeAssignFuncCalls(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, stmt, visiting)
 		case *ast.ExprStmt:
 			analyzeExpr(fset, typeInfo, tree, fieldGroups, groups, consts, stmt.X)
 			analyzeFuncCall(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, stmt.X, visiting)
 		case *ast.RangeStmt:
 			analyzeRouteTableRange(fset, typeInfo, tree, fieldGroups, groups, routeTables, stmt)
 		}
+	}
+}
+
+func analyzeDeclFuncCalls(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, stmt *ast.DeclStmt, visiting map[*ast.FuncDecl]bool) {
+	genDecl, ok := stmt.Decl.(*ast.GenDecl)
+	if !ok || genDecl.Tok != token.VAR {
+		return
+	}
+	for _, spec := range genDecl.Specs {
+		valueSpec, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			continue
+		}
+		for _, value := range valueSpec.Values {
+			analyzeFuncCall(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, value, visiting)
+		}
+	}
+}
+
+func analyzeAssignFuncCalls(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, stmt *ast.AssignStmt, visiting map[*ast.FuncDecl]bool) {
+	for _, rhs := range stmt.Rhs {
+		analyzeFuncCall(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, rhs, visiting)
 	}
 }
 
