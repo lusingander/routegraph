@@ -12,7 +12,8 @@ type analysisContext struct {
 	fset        *token.FileSet
 	typeInfo    *types.Info
 	tree        *analyzer.RouteTree
-	funcs       map[*types.Func]*ast.FuncDecl
+	funcs       map[*types.Func]funcInfo
+	funcNames   map[string]funcInfo
 	fieldGroups map[string]analyzer.NodeID
 	fileConsts  map[string]string
 
@@ -23,12 +24,19 @@ type analysisContext struct {
 	visiting    map[*ast.FuncDecl]bool
 }
 
-func newAnalysisContext(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string) *analysisContext {
+type funcInfo struct {
+	decl       *ast.FuncDecl
+	typeInfo   *types.Info
+	fileConsts map[string]string
+}
+
+func newAnalysisContext(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]funcInfo, funcNames map[string]funcInfo, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string) *analysisContext {
 	return &analysisContext{
 		fset:        fset,
 		typeInfo:    typeInfo,
 		tree:        tree,
 		funcs:       funcs,
+		funcNames:   funcNames,
 		fieldGroups: fieldGroups,
 		fileConsts:  fileConsts,
 		groups:      map[string]analyzer.NodeID{},

@@ -8,8 +8,8 @@ import (
 	"github.com/lusingander/routegraph/internal/analyzer"
 )
 
-func collectPackageFuncs(typeInfo *types.Info, files []*ast.File) map[*types.Func]*ast.FuncDecl {
-	funcs := map[*types.Func]*ast.FuncDecl{}
+func collectPackageFuncs(typeInfo *types.Info, files []*ast.File, fileConsts map[string]string) map[*types.Func]funcInfo {
+	funcs := map[*types.Func]funcInfo{}
 	for _, file := range files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -20,23 +20,30 @@ func collectPackageFuncs(typeInfo *types.Info, files []*ast.File) map[*types.Fun
 			if !ok {
 				continue
 			}
-			funcs[obj] = fn
+			funcs[obj] = funcInfo{
+				decl:       fn,
+				typeInfo:   typeInfo,
+				fileConsts: fileConsts,
+			}
 		}
 	}
 	return funcs
 }
 
-func analyzeFunc(ctx *analysisContext, fn *ast.FuncDecl, initialGroups map[string]analyzer.NodeID, initialFields localFieldGroups) {
-	if ctx.visiting[fn] {
+func analyzeFunc(ctx *analysisContext, fn funcInfo, initialGroups map[string]analyzer.NodeID, initialFields localFieldGroups) {
+	if ctx.visiting[fn.decl] {
 		return
 	}
-	ctx.visiting[fn] = true
-	defer delete(ctx.visiting, fn)
+	ctx.visiting[fn.decl] = true
+	defer delete(ctx.visiting, fn.decl)
 
 	fnCtx := ctx.withCallBindings(initialGroups, initialFields)
-	collectBlockConsts(fn.Body, fnCtx.consts)
+	fnCtx.typeInfo = fn.typeInfo
+	fnCtx.fileConsts = fn.fileConsts
+	fnCtx.consts = cloneConsts(fn.fileConsts)
+	collectBlockConsts(fn.decl.Body, fnCtx.consts)
 
-	analyzeBlock(fnCtx, fn.Body)
+	analyzeBlock(fnCtx, fn.decl.Body)
 }
 
 func analyzeBlock(ctx *analysisContext, block *ast.BlockStmt) {
@@ -135,8 +142,8 @@ func analyzeFuncCall(ctx *analysisContext, expr ast.Expr) {
 	}
 	analyzeCallbackArgs(ctx, call)
 
-	callee := ctx.funcs[calleeFunc(ctx.typeInfo, call)]
-	if callee == nil || callee.Type.Params == nil {
+	callee := ctx.calleeInfo(call)
+	if callee.decl == nil || callee.decl.Type.Params == nil {
 		return
 	}
 
@@ -145,7 +152,7 @@ func analyzeFuncCall(ctx *analysisContext, expr ast.Expr) {
 		return
 	}
 
-	if recvName, recvFields, ok := receiverFieldBinding(ctx, callee, call); ok {
+	if recvName, recvFields, ok := receiverFieldBinding(ctx, callee.decl, call); ok {
 		initialFields[recvName] = recvFields
 	}
 	if len(initialGroups) == 0 && len(initialFields) == 0 {
@@ -222,15 +229,15 @@ func bindStructResult(ctx *analysisContext, name string, expr ast.Expr) {
 	}
 }
 
-func callBindings(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr) (map[string]analyzer.NodeID, localFieldGroups, bool) {
+func callBindings(ctx *analysisContext, callee funcInfo, call *ast.CallExpr) (map[string]analyzer.NodeID, localFieldGroups, bool) {
 	return callBindingsWithEnv(ctx, callee, call, ctx.groups, ctx.fields, ctx.consts)
 }
 
-func callBindingsWithEnv(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string) (map[string]analyzer.NodeID, localFieldGroups, bool) {
+func callBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.CallExpr, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string) (map[string]analyzer.NodeID, localFieldGroups, bool) {
 	initialGroups := map[string]analyzer.NodeID{}
 	initialFields := localFieldGroups{}
 	argIndex := 0
-	for _, field := range callee.Type.Params.List {
+	for _, field := range callee.decl.Type.Params.List {
 		for _, name := range field.Names {
 			if argIndex >= len(call.Args) {
 				return nil, nil, false
@@ -239,7 +246,7 @@ func callBindingsWithEnv(ctx *analysisContext, callee *ast.FuncDecl, call *ast.C
 			if !ok {
 				nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, call.Args[argIndex])
 			}
-			if ok && isEchoParam(ctx.typeInfo, name) {
+			if ok && isEchoParam(callee.typeInfo, name) {
 				initialGroups[name.Name] = nodeID
 			}
 			argIndex++
@@ -248,25 +255,28 @@ func callBindingsWithEnv(ctx *analysisContext, callee *ast.FuncDecl, call *ast.C
 	return initialGroups, initialFields, true
 }
 
-func returnedStructFields(ctx *analysisContext, fn *ast.FuncDecl, groups map[string]analyzer.NodeID, fields localFieldGroups) (map[string]analyzer.NodeID, bool) {
-	if ctx.visiting[fn] {
+func returnedStructFields(ctx *analysisContext, fn funcInfo, groups map[string]analyzer.NodeID, fields localFieldGroups) (map[string]analyzer.NodeID, bool) {
+	if ctx.visiting[fn.decl] {
 		return nil, false
 	}
+	fnCtx := *ctx
+	fnCtx.typeInfo = fn.typeInfo
+	fnCtx.fileConsts = fn.fileConsts
 	localGroups := cloneGroups(groups)
 	localFields := cloneLocalFieldGroups(fields)
-	localConsts := cloneConsts(ctx.consts)
-	collectBlockConsts(fn.Body, localConsts)
-	for _, stmt := range fn.Body.List {
+	localConsts := cloneConsts(fn.fileConsts)
+	collectBlockConsts(fn.decl.Body, localConsts)
+	for _, stmt := range fn.decl.Body.List {
 		ret, ok := stmt.(*ast.ReturnStmt)
 		if ok {
 			for _, result := range ret.Results {
-				if structFields, ok := structResultFields(ctx, result, localGroups, localFields, localConsts); ok {
+				if structFields, ok := structResultFields(&fnCtx, result, localGroups, localFields, localConsts); ok {
 					return structFields, true
 				}
 			}
 			continue
 		}
-		analyzeReturnPreludeStmt(ctx, localGroups, localFields, localConsts, stmt)
+		analyzeReturnPreludeStmt(&fnCtx, localGroups, localFields, localConsts, stmt)
 	}
 	return nil, false
 }
@@ -287,15 +297,15 @@ func structResultFields(ctx *analysisContext, expr ast.Expr, groups map[string]a
 	if !ok {
 		return nil, false
 	}
-	callee := ctx.funcs[calleeFunc(ctx.typeInfo, call)]
-	if callee == nil {
+	callee := ctx.calleeInfo(call)
+	if callee.decl == nil {
 		return nil, false
 	}
 	initialGroups, initialFields, ok := callBindingsWithEnv(ctx, callee, call, groups, fields, consts)
 	if !ok {
 		return nil, false
 	}
-	if recvName, recvFields, ok := receiverFieldBindingWithEnv(ctx, callee, call, groups, fields, consts); ok {
+	if recvName, recvFields, ok := receiverFieldBindingWithEnv(ctx, callee.decl, call, groups, fields, consts); ok {
 		initialFields[recvName] = recvFields
 	}
 	return returnedStructFields(ctx, callee, initialGroups, initialFields)
@@ -366,15 +376,15 @@ func receiverFieldBindingWithEnv(ctx *analysisContext, callee *ast.FuncDecl, cal
 		}
 		return recvName, cloneFieldGroup(instanceFields), true
 	case *ast.CallExpr:
-		receiverCallee := ctx.funcs[calleeFunc(ctx.typeInfo, receiver)]
-		if receiverCallee == nil {
+		receiverCallee := ctx.calleeInfo(receiver)
+		if receiverCallee.decl == nil {
 			return "", nil, false
 		}
 		initialGroups, initialFields, ok := callBindingsWithEnv(ctx, receiverCallee, receiver, groups, fields, consts)
 		if !ok {
 			return "", nil, false
 		}
-		if nestedRecvName, nestedRecvFields, ok := receiverFieldBindingWithEnv(ctx, receiverCallee, receiver, groups, fields, consts); ok {
+		if nestedRecvName, nestedRecvFields, ok := receiverFieldBindingWithEnv(ctx, receiverCallee.decl, receiver, groups, fields, consts); ok {
 			initialFields[nestedRecvName] = nestedRecvFields
 		}
 		returnedFields, ok := returnedStructFields(ctx, receiverCallee, initialGroups, initialFields)
@@ -402,4 +412,19 @@ func calleeFunc(typeInfo *types.Info, call *ast.CallExpr) *types.Func {
 	default:
 		return nil
 	}
+}
+
+func (ctx *analysisContext) calleeInfo(call *ast.CallExpr) funcInfo {
+	fn := calleeFunc(ctx.typeInfo, call)
+	if info := ctx.funcs[fn]; info.decl != nil {
+		return info
+	}
+	return ctx.funcNames[funcKey(fn)]
+}
+
+func funcKey(fn *types.Func) string {
+	if fn == nil {
+		return ""
+	}
+	return fn.FullName()
 }

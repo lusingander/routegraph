@@ -25,24 +25,34 @@ func Analyze(ctx context.Context, dir string, tree *analyzer.RouteTree) error {
 }
 
 func (Analyzer) Analyze(ctx context.Context, pkgs []analyzer.GoPackage, tree *analyzer.RouteTree) error {
+	funcs := map[*types.Func]funcInfo{}
+	funcNames := map[string]funcInfo{}
+	pkgConsts := make([]map[string]string, len(pkgs))
 	for _, pkg := range pkgs {
 		if len(pkg.Pkg.Errors) > 0 {
 			return fmt.Errorf("%s", pkg.Pkg.Errors[0])
 		}
-		pkgConsts := collectPackageConsts(pkg.Pkg.Syntax)
-		funcs := collectPackageFuncs(pkg.Pkg.TypesInfo, pkg.Pkg.Syntax)
-		fieldGroups := map[string]analyzer.NodeID{}
+	}
+	for i, pkg := range pkgs {
+		pkgConsts[i] = collectPackageConsts(pkg.Pkg.Syntax)
+		for fn, info := range collectPackageFuncs(pkg.Pkg.TypesInfo, pkg.Pkg.Syntax, pkgConsts[i]) {
+			funcs[fn] = info
+			funcNames[funcKey(fn)] = info
+		}
+	}
+	fieldGroups := map[string]analyzer.NodeID{}
+	for i, pkg := range pkgs {
 		for _, file := range pkg.Pkg.Syntax {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, funcs, fieldGroups, file, pkgConsts)
+			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, funcs, funcNames, fieldGroups, file, pkgConsts[i])
 		}
 	}
 	return nil
 }
 
-func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, file *ast.File, pkgConsts map[string]string) {
+func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]funcInfo, funcNames map[string]funcInfo, fieldGroups map[string]analyzer.NodeID, file *ast.File, pkgConsts map[string]string) {
 	fileConsts := cloneConsts(pkgConsts)
 	collectFileConsts(file, fileConsts)
 	for _, decl := range file.Decls {
@@ -50,7 +60,15 @@ func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 		if !ok || fn.Body == nil || fn.Recv != nil {
 			continue
 		}
-		ctx := newAnalysisContext(fset, typeInfo, tree, funcs, fieldGroups, fileConsts)
-		analyzeFunc(ctx, fn, nil, nil)
+		fnObj, ok := typeInfo.Defs[fn.Name].(*types.Func)
+		if !ok {
+			continue
+		}
+		info := funcs[fnObj]
+		if info.decl == nil {
+			continue
+		}
+		ctx := newAnalysisContext(fset, typeInfo, tree, funcs, funcNames, fieldGroups, fileConsts)
+		analyzeFunc(ctx, info, nil, nil)
 	}
 }
