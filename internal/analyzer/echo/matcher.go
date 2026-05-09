@@ -13,7 +13,7 @@ var routeMethods = map[string]string{
 }
 
 type routeCall struct {
-	Method          string
+	Methods         []string
 	PathArgIndex    int
 	HandlerArgIndex int
 }
@@ -24,7 +24,7 @@ func routeCallInfo(name string, args []ast.Expr, consts map[string]string) (rout
 			return routeCall{}, false
 		}
 		return routeCall{
-			Method:          method,
+			Methods:         []string{method},
 			PathArgIndex:    0,
 			HandlerArgIndex: 1,
 		}, true
@@ -35,7 +35,7 @@ func routeCallInfo(name string, args []ast.Expr, consts map[string]string) (rout
 			return routeCall{}, false
 		}
 		return routeCall{
-			Method:          "ANY",
+			Methods:         []string{"ANY"},
 			PathArgIndex:    0,
 			HandlerArgIndex: 1,
 		}, true
@@ -48,7 +48,7 @@ func routeCallInfo(name string, args []ast.Expr, consts map[string]string) (rout
 			method = "UNKNOWN"
 		}
 		return routeCall{
-			Method:          method,
+			Methods:         []string{method},
 			PathArgIndex:    1,
 			HandlerArgIndex: 2,
 		}, true
