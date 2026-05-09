@@ -30,10 +30,10 @@ POST  /api/v1/users        createUser  internal/routes/user.go:25
 GET   /api/v1/admin/stats  stats       internal/routes/admin.go:18
 ```
 
-Use `--json` for machine-readable output:
+Use `--format json` for machine-readable output:
 
 ```sh
-routegraph --json ./...
+routegraph --format json ./...
 ```
 
 Unknown dynamic paths are kept instead of being dropped:

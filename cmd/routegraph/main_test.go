@@ -37,7 +37,7 @@ func TestRunAcceptsRecursivePackagePattern(t *testing.T) {
 
 func TestRunPrintsJSON(t *testing.T) {
 	var out bytes.Buffer
-	if err := run(context.Background(), []string{"--json", "../../testdata/basic"}, &out); err != nil {
+	if err := run(context.Background(), []string{"--format", "json", "../../testdata/basic"}, &out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -52,5 +52,15 @@ func TestRunPrintsJSON(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output does not contain %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestRunAcceptsTextFormat(t *testing.T) {
+	var out bytes.Buffer
+	if err := run(context.Background(), []string{"--format", "text", "../../testdata/basic"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "GET   /api/v1/users        listUsers") {
+		t.Fatalf("route not printed:\n%s", out.String())
 	}
 }

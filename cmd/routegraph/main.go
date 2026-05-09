@@ -12,8 +12,8 @@ import (
 )
 
 type cliOptions struct {
-	JSON bool   `help:"Print routes as JSON."`
-	Dir  string `arg:"" optional:"" default:"." help:"Target directory or package pattern."`
+	Format string `default:"text" enum:"text,json" help:"Output format."`
+	Dir    string `arg:"" optional:"" default:"." help:"Target directory or package pattern."`
 }
 
 func main() {
@@ -36,7 +36,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 
-	if opts.JSON {
+	if opts.Format == "json" {
 		return printer.PrintJSON(stdout, routes)
 	}
 	return printer.Print(stdout, routes)
