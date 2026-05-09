@@ -16,6 +16,7 @@ const (
 	valueStrings valueKind = "strings"
 	valueGroup   valueKind = "group"
 	valueRoutes  valueKind = "routes"
+	valueStruct  valueKind = "struct"
 )
 
 type value struct {
@@ -25,6 +26,7 @@ type value struct {
 	Strings []analyzer.PathExpr
 	Group   analyzer.NodeID
 	Routes  []routeTableEntry
+	Fields  map[string]value
 }
 
 type env struct {
@@ -42,7 +44,7 @@ func newEnv(consts map[string]string) env {
 func cloneEnv(e env) env {
 	values := make(map[string]value, len(e.values))
 	for name, value := range e.values {
-		values[name] = value
+		values[name] = cloneValue(value)
 	}
 	return env{
 		values: values,
@@ -63,6 +65,14 @@ func (e env) setGroup(name string, id analyzer.NodeID) {
 func (e env) group(name string) (analyzer.NodeID, bool) {
 	value, ok := e.values[name]
 	if !ok || value.Kind != valueGroup {
+		return 0, false
+	}
+	return value.Group, true
+}
+
+func (e env) groupValue(expr ast.Expr) (analyzer.NodeID, bool) {
+	value := evalValue(e, expr)
+	if value.Kind != valueGroup {
 		return 0, false
 	}
 	return value.Group, true
@@ -93,10 +103,14 @@ func evalValue(e env, expr ast.Expr) value {
 		return stringValueOf(analyzer.KnownPath(value))
 	case *ast.CompositeLit:
 		values, ok := stringSliceValue(e, expr)
-		if !ok {
-			return unknownValue()
+		if ok {
+			return stringsValueOf(values)
 		}
-		return stringsValueOf(values)
+		fields, ok := structFieldsValue(e, expr)
+		if ok {
+			return structValueOf(fields)
+		}
+		return unknownValue()
 	case *ast.Ident:
 		if value, ok := e.values[expr.Name]; ok {
 			return value
@@ -120,9 +134,32 @@ func evalValue(e env, expr ast.Expr) value {
 		return stringValueOf(analyzer.KnownPath(left.String.Value + right.String.Value))
 	case *ast.ParenExpr:
 		return evalValue(e, expr.X)
+	case *ast.SelectorExpr:
+		receiver := evalValue(e, expr.X)
+		if receiver.Kind != valueStruct {
+			return unknownValue()
+		}
+		field, ok := receiver.Fields[expr.Sel.Name]
+		if !ok {
+			return unknownValue()
+		}
+		return field
 	default:
 		return unknownValue()
 	}
+}
+
+func cloneValue(v value) value {
+	cloned := v
+	cloned.Strings = append([]analyzer.PathExpr(nil), v.Strings...)
+	cloned.Routes = append([]routeTableEntry(nil), v.Routes...)
+	if v.Fields != nil {
+		cloned.Fields = make(map[string]value, len(v.Fields))
+		for name, field := range v.Fields {
+			cloned.Fields[name] = cloneValue(field)
+		}
+	}
+	return cloned
 }
 
 func stringValueOf(path analyzer.PathExpr) value {
@@ -153,6 +190,17 @@ func routesValueOf(routes []routeTableEntry) value {
 	}
 }
 
+func structValueOf(fields map[string]value) value {
+	cloned := make(map[string]value, len(fields))
+	for name, field := range fields {
+		cloned[name] = cloneValue(field)
+	}
+	return value{
+		Kind:   valueStruct,
+		Fields: cloned,
+	}
+}
+
 func unknownValue() value {
 	return value{Kind: valueUnknown}
 }
@@ -170,4 +218,24 @@ func stringSliceValue(e env, lit *ast.CompositeLit) ([]analyzer.PathExpr, bool) 
 		values = append(values, value.String)
 	}
 	return values, true
+}
+
+func structFieldsValue(e env, lit *ast.CompositeLit) (map[string]value, bool) {
+	fields := map[string]value{}
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		name, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		value := evalValue(e, kv.Value)
+		if value.Kind == valueUnknown {
+			continue
+		}
+		fields[name.Name] = value
+	}
+	return fields, len(fields) > 0
 }

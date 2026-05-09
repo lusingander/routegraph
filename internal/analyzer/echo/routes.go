@@ -28,7 +28,7 @@ func analyzeDecl(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 				env.setGroup(valueSpec.Names[i].Name, nodeID)
 				continue
 			}
-			bindValue(env, valueSpec.Names[i].Name, value)
+			bindValue(fset, typeInfo, tree, fieldGroups, groups, fields, env, valueSpec.Names[i].Name, value)
 		}
 	}
 }
@@ -49,16 +49,52 @@ func analyzeAssign(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Rou
 			env.setGroup(lhs.Name, nodeID)
 			continue
 		}
-		bindValue(env, lhs.Name, rhs)
+		bindValue(fset, typeInfo, tree, fieldGroups, groups, fields, env, lhs.Name, rhs)
 	}
 }
 
-func bindValue(env env, name string, expr ast.Expr) {
-	value := evalValue(env, expr)
+func bindValue(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, env env, name string, expr ast.Expr) {
+	value := evalRouteValue(fset, typeInfo, tree, fieldGroups, groups, fields, env, expr)
 	switch value.Kind {
-	case valueString, valueStrings:
+	case valueString, valueStrings, valueStruct, valueRoutes:
 		env.values[name] = value
 	}
+}
+
+func evalRouteValue(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, env env, expr ast.Expr) value {
+	if unary, ok := expr.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+		expr = unary.X
+	}
+	if id, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, env, expr); ok {
+		return groupValueOf(id)
+	}
+	if entries, ok := routeTableEntries(expr, env); ok {
+		return routesValueOf(entries)
+	}
+	lit, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return evalValue(env, expr)
+	}
+	structFields := map[string]value{}
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		name, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		value := evalRouteValue(fset, typeInfo, tree, fieldGroups, groups, fields, env, kv.Value)
+		if value.Kind == valueUnknown {
+			continue
+		}
+		structFields[name.Name] = value
+	}
+	if len(structFields) > 0 {
+		return structValueOf(structFields)
+	}
+	return evalValue(env, expr)
 }
 
 func analyzeExpr(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, env env, expr ast.Expr) {
@@ -96,10 +132,8 @@ func routeReceiverNodeID(fset *token.FileSet, typeInfo *types.Info, tree *analyz
 	if nodeID, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, env, expr); ok {
 		return nodeID, true
 	}
-	if ident, ok := expr.(*ast.Ident); ok {
-		if id, ok := env.group(ident.Name); ok {
-			return id, true
-		}
+	if id, ok := env.groupValue(expr); ok {
+		return id, true
 	}
 	return receiverNodeID(typeInfo, fieldGroups, groups, fields, expr)
 }
@@ -113,7 +147,7 @@ func groupCallNodeID(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.R
 	if !ok || selector.Sel.Name != "Group" {
 		return 0, false
 	}
-	parentID, ok := receiverNodeID(typeInfo, fieldGroups, groups, fields, selector.X)
+	parentID, ok := routeReceiverNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, env, selector.X)
 	if !ok {
 		return 0, false
 	}
