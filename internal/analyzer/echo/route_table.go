@@ -77,9 +77,6 @@ func routeTableEntries(expr ast.Expr, env env) ([]routeTableEntry, bool) {
 		return nil, false
 	}
 	fieldNames := structFieldNames(arrayType.Elt)
-	if len(fieldNames) == 0 {
-		return nil, false
-	}
 
 	entries := make([]routeTableEntry, 0, len(lit.Elts))
 	for _, elt := range lit.Elts {
@@ -147,14 +144,7 @@ func structFieldNames(expr ast.Expr) []string {
 }
 
 func analyzeRouteTableRange(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, routeTables map[string][]routeTableEntry, env env, stmt *ast.RangeStmt) {
-	tableIdent, ok := stmt.X.(*ast.Ident)
-	if !ok {
-		return
-	}
-	entries := routeTables[tableIdent.Name]
-	if len(entries) == 0 {
-		entries, _ = env.routes(tableIdent.Name)
-	}
+	entries := rangeRouteTableEntries(routeTables, env, stmt.X)
 	if len(entries) == 0 {
 		return
 	}
@@ -176,12 +166,27 @@ func analyzeRouteTableRange(fset *token.FileSet, typeInfo *types.Info, tree *ana
 		if !ok {
 			continue
 		}
-		parentID, ok := receiverNodeID(typeInfo, fieldGroups, groups, fields, selector.X)
+		parentID, ok := routeReceiverNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, env, selector.X)
 		if !ok {
 			continue
 		}
 		addRouteTableEntries(fset, tree, parentID, entries, valueIdent.Name, selector.Sel.Name, call)
 	}
+}
+
+func rangeRouteTableEntries(routeTables map[string][]routeTableEntry, env env, expr ast.Expr) []routeTableEntry {
+	if tableIdent, ok := expr.(*ast.Ident); ok {
+		entries := routeTables[tableIdent.Name]
+		if len(entries) == 0 {
+			entries, _ = env.routes(tableIdent.Name)
+		}
+		return entries
+	}
+	value := evalValue(env, expr)
+	if value.Kind != valueRoutes {
+		return nil
+	}
+	return append([]routeTableEntry(nil), value.Routes...)
 }
 
 func addRouteTableEntries(fset *token.FileSet, tree *analyzer.RouteTree, parentID analyzer.NodeID, entries []routeTableEntry, rangeVar, methodName string, call *ast.CallExpr) {
