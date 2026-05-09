@@ -12,23 +12,47 @@ var routeMethods = map[string]string{
 	"HEAD":    "HEAD",
 }
 
-func routeMethod(name string, args []ast.Expr, consts map[string]string) (method string, pathArgIndex int, ok bool) {
+type routeCall struct {
+	Method          string
+	PathArgIndex    int
+	HandlerArgIndex int
+}
+
+func routeCallInfo(name string, args []ast.Expr, consts map[string]string) (routeCall, bool) {
 	if method, ok := routeMethods[name]; ok {
-		return method, 0, true
+		if len(args) < 2 {
+			return routeCall{}, false
+		}
+		return routeCall{
+			Method:          method,
+			PathArgIndex:    0,
+			HandlerArgIndex: 1,
+		}, true
 	}
 	switch name {
 	case "Any":
-		return "ANY", 0, len(args) >= 2
+		if len(args) < 2 {
+			return routeCall{}, false
+		}
+		return routeCall{
+			Method:          "ANY",
+			PathArgIndex:    0,
+			HandlerArgIndex: 1,
+		}, true
 	case "Add":
 		if len(args) < 3 {
-			return "", 0, false
+			return routeCall{}, false
 		}
 		method, ok := stringValue(args[0], consts)
 		if !ok {
 			method = "UNKNOWN"
 		}
-		return method, 1, true
+		return routeCall{
+			Method:          method,
+			PathArgIndex:    1,
+			HandlerArgIndex: 2,
+		}, true
 	default:
-		return "", 0, false
+		return routeCall{}, false
 	}
 }
