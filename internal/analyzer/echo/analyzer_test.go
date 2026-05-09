@@ -332,6 +332,8 @@ func TestAnalyzeDynamicRoutePath(t *testing.T) {
 
 	assertRoute(t, routes[0], "GET", "/api/<unknown>", "dynamicHandler", false)
 	assertRoute(t, routes[1], "UNKNOWN", "/api/<unknown>", "dynamicAddHandler", false)
+	assertWarnings(t, routes[0], "dynamic path expression")
+	assertWarnings(t, routes[1], "dynamic path expression")
 	assertDynamicRoutePathTree(t, tree)
 }
 
@@ -354,6 +356,18 @@ func assertRoute(t *testing.T, route analyzer.Route, method, path, handler strin
 	}
 	if route.File == "" || route.Line == 0 {
 		t.Fatalf("location not set: file=%q line=%d", route.File, route.Line)
+	}
+}
+
+func assertWarnings(t *testing.T, route analyzer.Route, warnings ...string) {
+	t.Helper()
+	if len(route.Warnings) != len(warnings) {
+		t.Fatalf("len(Warnings) = %d, want %d: %#v", len(route.Warnings), len(warnings), route.Warnings)
+	}
+	for i, want := range warnings {
+		if route.Warnings[i] != want {
+			t.Fatalf("Warnings[%d] = %q, want %q", i, route.Warnings[i], want)
+		}
 	}
 }
 

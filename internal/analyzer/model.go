@@ -85,14 +85,16 @@ func (t *RouteTree) AddGroup(parentID NodeID, framework Framework, path PathExpr
 	id := NodeID(len(t.Nodes))
 	parent := parentID
 	parentPath := t.Nodes[parentID].FullPath
+	fullPath := JoinPath(parentPath, path)
 	t.Nodes = append(t.Nodes, RouteNode{
 		ID:        id,
 		ParentID:  &parent,
 		Framework: framework,
 		Kind:      NodeKindGroup,
 		PathPart:  path,
-		FullPath:  JoinPath(parentPath, path),
+		FullPath:  fullPath,
 		Pos:       pos,
+		Warnings:  pathWarnings(fullPath),
 	})
 	return id
 }
@@ -101,6 +103,7 @@ func (t *RouteTree) AddRoute(parentID NodeID, framework Framework, method string
 	id := NodeID(len(t.Nodes))
 	parent := parentID
 	parentPath := t.Nodes[parentID].FullPath
+	fullPath := JoinPath(parentPath, path)
 	t.Nodes = append(t.Nodes, RouteNode{
 		ID:        id,
 		ParentID:  &parent,
@@ -108,11 +111,19 @@ func (t *RouteTree) AddRoute(parentID NodeID, framework Framework, method string
 		Kind:      NodeKindRoute,
 		Method:    method,
 		PathPart:  path,
-		FullPath:  JoinPath(parentPath, path),
+		FullPath:  fullPath,
 		Handler:   handler,
 		Pos:       pos,
+		Warnings:  pathWarnings(fullPath),
 	})
 	return id
+}
+
+func pathWarnings(path PathExpr) []string {
+	if path.Known || path.Reason == "" {
+		return nil
+	}
+	return []string{path.Reason}
 }
 
 func (t *RouteTree) Node(id NodeID) (RouteNode, bool) {
