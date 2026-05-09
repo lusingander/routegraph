@@ -28,6 +28,7 @@ func (Analyzer) Analyze(ctx context.Context, pkgs []analyzer.GoPackage, tree *an
 	funcs := map[*types.Func]funcInfo{}
 	funcNames := map[string]funcInfo{}
 	pkgConsts := make([]map[string]string, len(pkgs))
+	pkgRouteTables := make([]map[string][]routeTableEntry, len(pkgs))
 	for _, pkg := range pkgs {
 		if len(pkg.Pkg.Errors) > 0 {
 			return fmt.Errorf("%s", pkg.Pkg.Errors[0])
@@ -35,6 +36,7 @@ func (Analyzer) Analyze(ctx context.Context, pkgs []analyzer.GoPackage, tree *an
 	}
 	for i, pkg := range pkgs {
 		pkgConsts[i] = collectPackageConsts(pkg.Pkg.Syntax)
+		pkgRouteTables[i] = collectPackageRouteTables(pkg.Pkg.Syntax, newEnv(pkgConsts[i]))
 		for fn, info := range collectPackageFuncs(pkg.Pkg.TypesInfo, pkg.Pkg.Syntax, pkgConsts[i]) {
 			funcs[fn] = info
 			funcNames[funcKey(fn)] = info
@@ -47,13 +49,13 @@ func (Analyzer) Analyze(ctx context.Context, pkgs []analyzer.GoPackage, tree *an
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, funcs, funcNames, fieldGroups, analyzed, file, pkgConsts[i])
+			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, funcs, funcNames, fieldGroups, analyzed, file, pkgConsts[i], pkgRouteTables[i])
 		}
 	}
 	return nil
 }
 
-func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]funcInfo, funcNames map[string]funcInfo, fieldGroups map[string]analyzer.NodeID, analyzed map[string]bool, file *ast.File, pkgConsts map[string]string) {
+func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]funcInfo, funcNames map[string]funcInfo, fieldGroups map[string]analyzer.NodeID, analyzed map[string]bool, file *ast.File, pkgConsts map[string]string, pkgRouteTables map[string][]routeTableEntry) {
 	fileConsts := cloneConsts(pkgConsts)
 	collectFileConsts(file, fileConsts)
 	for _, decl := range file.Decls {
@@ -70,6 +72,10 @@ func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 			continue
 		}
 		ctx := newAnalysisContext(fset, typeInfo, tree, funcs, funcNames, fieldGroups, fileConsts)
+		for name, entries := range pkgRouteTables {
+			ctx.routeTables[name] = entries
+			ctx.env.setRoutes(name, entries)
+		}
 		ctx.analyzed = analyzed
 		analyzeFunc(ctx, info, nil, nil)
 	}

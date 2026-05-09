@@ -13,6 +13,7 @@ type valueKind string
 const (
 	valueUnknown valueKind = "unknown"
 	valueString  valueKind = "string"
+	valueStrings valueKind = "strings"
 	valueGroup   valueKind = "group"
 	valueRoutes  valueKind = "routes"
 )
@@ -20,9 +21,10 @@ const (
 type value struct {
 	Kind valueKind
 
-	String analyzer.PathExpr
-	Group  analyzer.NodeID
-	Routes []routeTableEntry
+	String  analyzer.PathExpr
+	Strings []analyzer.PathExpr
+	Group   analyzer.NodeID
+	Routes  []routeTableEntry
 }
 
 type env struct {
@@ -89,6 +91,12 @@ func evalValue(e env, expr ast.Expr) value {
 			return unknownValue()
 		}
 		return stringValueOf(analyzer.KnownPath(value))
+	case *ast.CompositeLit:
+		values, ok := stringSliceValue(e, expr)
+		if !ok {
+			return unknownValue()
+		}
+		return stringsValueOf(values)
 	case *ast.Ident:
 		if value, ok := e.values[expr.Name]; ok {
 			return value
@@ -124,6 +132,13 @@ func stringValueOf(path analyzer.PathExpr) value {
 	}
 }
 
+func stringsValueOf(values []analyzer.PathExpr) value {
+	return value{
+		Kind:    valueStrings,
+		Strings: append([]analyzer.PathExpr(nil), values...),
+	}
+}
+
 func groupValueOf(id analyzer.NodeID) value {
 	return value{
 		Kind:  valueGroup,
@@ -140,4 +155,19 @@ func routesValueOf(routes []routeTableEntry) value {
 
 func unknownValue() value {
 	return value{Kind: valueUnknown}
+}
+
+func stringSliceValue(e env, lit *ast.CompositeLit) ([]analyzer.PathExpr, bool) {
+	if _, ok := lit.Type.(*ast.ArrayType); !ok {
+		return nil, false
+	}
+	values := make([]analyzer.PathExpr, 0, len(lit.Elts))
+	for _, elt := range lit.Elts {
+		value := evalValue(e, elt)
+		if value.Kind != valueString {
+			return nil, false
+		}
+		values = append(values, value.String)
+	}
+	return values, true
 }

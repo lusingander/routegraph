@@ -23,11 +23,12 @@ func analyzeDecl(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 				continue
 			}
 			nodeID, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, env, value)
-			if !ok {
+			if ok {
+				groups[valueSpec.Names[i].Name] = nodeID
+				env.setGroup(valueSpec.Names[i].Name, nodeID)
 				continue
 			}
-			groups[valueSpec.Names[i].Name] = nodeID
-			env.setGroup(valueSpec.Names[i].Name, nodeID)
+			bindValue(env, valueSpec.Names[i].Name, value)
 		}
 	}
 }
@@ -43,11 +44,20 @@ func analyzeAssign(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Rou
 		}
 
 		nodeID, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, env, rhs)
-		if !ok {
+		if ok {
+			groups[lhs.Name] = nodeID
+			env.setGroup(lhs.Name, nodeID)
 			continue
 		}
-		groups[lhs.Name] = nodeID
-		env.setGroup(lhs.Name, nodeID)
+		bindValue(env, lhs.Name, rhs)
+	}
+}
+
+func bindValue(env env, name string, expr ast.Expr) {
+	value := evalValue(env, expr)
+	switch value.Kind {
+	case valueString, valueStrings:
+		env.values[name] = value
 	}
 }
 
@@ -60,7 +70,7 @@ func analyzeExpr(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 	if !ok || len(call.Args) < 2 {
 		return
 	}
-	route, ok := routeCallInfo(selector.Sel.Name, call.Args, env.consts)
+	route, ok := routeCallInfo(selector.Sel.Name, call.Args, env)
 	if !ok {
 		return
 	}

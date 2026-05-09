@@ -18,7 +18,7 @@ type routeCall struct {
 	HandlerArgIndex int
 }
 
-func routeCallInfo(name string, args []ast.Expr, consts map[string]string) (routeCall, bool) {
+func routeCallInfo(name string, args []ast.Expr, env env) (routeCall, bool) {
 	if method, ok := routeMethods[name]; ok {
 		if len(args) < 2 {
 			return routeCall{}, false
@@ -43,12 +43,25 @@ func routeCallInfo(name string, args []ast.Expr, consts map[string]string) (rout
 		if len(args) < 3 {
 			return routeCall{}, false
 		}
-		method, ok := stringValue(args[0], consts)
+		method, ok := stringValueFromEnv(args[0], env)
 		if !ok {
 			method = "UNKNOWN"
 		}
 		return routeCall{
 			Methods:         []string{method},
+			PathArgIndex:    1,
+			HandlerArgIndex: 2,
+		}, true
+	case "Match":
+		if len(args) < 3 {
+			return routeCall{}, false
+		}
+		methods, ok := stringValuesFromEnv(args[0], env)
+		if !ok {
+			methods = []string{"UNKNOWN"}
+		}
+		return routeCall{
+			Methods:         methods,
 			PathArgIndex:    1,
 			HandlerArgIndex: 2,
 		}, true

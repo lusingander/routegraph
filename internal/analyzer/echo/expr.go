@@ -31,6 +31,21 @@ func stringValueFromEnv(expr ast.Expr, env env) (string, bool) {
 	return value.String.Value, true
 }
 
+func stringValuesFromEnv(expr ast.Expr, env env) ([]string, bool) {
+	value := evalValue(env, expr)
+	if value.Kind != valueStrings {
+		return nil, false
+	}
+	values := make([]string, 0, len(value.Strings))
+	for _, item := range value.Strings {
+		if !item.Known {
+			return nil, false
+		}
+		values = append(values, item.Value)
+	}
+	return values, true
+}
+
 func collectPackageConsts(files []*ast.File) map[string]string {
 	consts := map[string]string{}
 	for _, file := range files {

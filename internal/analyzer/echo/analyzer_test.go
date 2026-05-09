@@ -70,6 +70,23 @@ func TestAnalyzeAnyAdd(t *testing.T) {
 	assertRoute(t, routes[2], "UNKNOWN", "/api/dynamic", "dynamicHandler", true)
 }
 
+func TestAnalyzeMatch(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/echo_match", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 4 {
+		t.Fatalf("len(routes) = %d, want 4: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
+	assertRoute(t, routes[1], "POST", "/api/users", "users", true)
+	assertRoute(t, routes[2], "PUT", "/api/users/:id", "updateUser", true)
+	assertRoute(t, routes[3], "PATCH", "/api/users/:id", "updateUser", true)
+}
+
 func TestAnalyzeSkipsNonEchoReceivers(t *testing.T) {
 	tree := analyzer.NewRouteTree()
 	if err := Analyze(context.Background(), "../../../testdata/type_aware", tree); err != nil {
@@ -316,6 +333,22 @@ func TestAnalyzeRouteTable(t *testing.T) {
 	assertRoute(t, routes[0], "GET", "/api/users", "listUsers", true)
 	assertRoute(t, routes[1], "POST", "/api/users", "createUser", true)
 	assertRoute(t, routes[2], "GET", "/api/admin/stats", "stats", true)
+}
+
+func TestAnalyzePackageRouteTable(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/package_route_table", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 3 {
+		t.Fatalf("len(routes) = %d, want 3: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
+	assertRoute(t, routes[1], "POST", "/api/users", "users", true)
+	assertRoute(t, routes[2], "DELETE", "/api/users/:id", "deleteUser", true)
 }
 
 func TestAnalyzeEchoCoverageRefinements(t *testing.T) {

@@ -55,9 +55,9 @@ func (ctx *analysisContext) withCallBindings(groups map[string]analyzer.NodeID, 
 	next := *ctx
 	next.groups = cloneGroups(groups)
 	next.fields = cloneLocalFieldGroups(fields)
-	next.routeTables = map[string][]routeTableEntry{}
+	next.routeTables = cloneRouteTables(ctx.routeTables)
 	next.consts = cloneConsts(ctx.fileConsts)
-	next.env = newEnv(ctx.fileConsts)
+	next.env = ctx.env.withConsts(ctx.fileConsts)
 	for name, id := range groups {
 		next.env.setGroup(name, id)
 	}
