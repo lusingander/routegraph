@@ -147,7 +147,7 @@ func analyzeFuncCall(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.R
 		return
 	}
 
-	if recvName, recvFields, ok := receiverFieldBinding(fields, callee, call); ok {
+	if recvName, recvFields, ok := receiverFieldBinding(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, callee, call, visiting); ok {
 		initialFields[recvName] = recvFields
 	}
 	if len(initialGroups) == 0 && len(initialFields) == 0 {
@@ -175,7 +175,7 @@ func bindStructResult(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.
 	if !ok {
 		return
 	}
-	if recvName, recvFields, ok := receiverFieldBinding(fields, callee, call); ok {
+	if recvName, recvFields, ok := receiverFieldBinding(fset, typeInfo, tree, funcs, fieldGroups, consts, groups, fields, callee, call, visiting); ok {
 		initialFields[recvName] = recvFields
 	}
 	if returnedFields, ok := returnedStructFields(fset, typeInfo, tree, fieldGroups, consts, callee, initialGroups, initialFields, visiting); ok {
@@ -251,7 +251,7 @@ func analyzeReturnPreludeStmt(fset *token.FileSet, typeInfo *types.Info, tree *a
 	}
 }
 
-func receiverFieldBinding(fields localFieldGroups, callee *ast.FuncDecl, call *ast.CallExpr) (string, map[string]analyzer.NodeID, bool) {
+func receiverFieldBinding(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, consts map[string]string, groups map[string]analyzer.NodeID, fields localFieldGroups, callee *ast.FuncDecl, call *ast.CallExpr, visiting map[*ast.FuncDecl]bool) (string, map[string]analyzer.NodeID, bool) {
 	if callee.Recv == nil || len(callee.Recv.List) == 0 || len(callee.Recv.List[0].Names) == 0 {
 		return "", nil, false
 	}
@@ -259,16 +259,34 @@ func receiverFieldBinding(fields localFieldGroups, callee *ast.FuncDecl, call *a
 	if !ok {
 		return "", nil, false
 	}
-	ident, ok := selector.X.(*ast.Ident)
-	if !ok {
-		return "", nil, false
-	}
-	instanceFields := fields[ident.Name]
-	if len(instanceFields) == 0 {
-		return "", nil, false
-	}
 	recvName := callee.Recv.List[0].Names[0].Name
-	return recvName, cloneFieldGroup(instanceFields), true
+	switch receiver := selector.X.(type) {
+	case *ast.Ident:
+		instanceFields := fields[receiver.Name]
+		if len(instanceFields) == 0 {
+			return "", nil, false
+		}
+		return recvName, cloneFieldGroup(instanceFields), true
+	case *ast.CallExpr:
+		receiverCallee := funcs[calleeFunc(typeInfo, receiver)]
+		if receiverCallee == nil {
+			return "", nil, false
+		}
+		initialGroups, initialFields, ok := callBindings(fset, typeInfo, tree, fieldGroups, groups, fields, consts, receiverCallee, receiver)
+		if !ok {
+			return "", nil, false
+		}
+		if nestedRecvName, nestedRecvFields, ok := receiverFieldBinding(fset, typeInfo, tree, funcs, fieldGroups, consts, groups, fields, receiverCallee, receiver, visiting); ok {
+			initialFields[nestedRecvName] = nestedRecvFields
+		}
+		returnedFields, ok := returnedStructFields(fset, typeInfo, tree, fieldGroups, consts, receiverCallee, initialGroups, initialFields, visiting)
+		if !ok {
+			return "", nil, false
+		}
+		return recvName, returnedFields, true
+	default:
+		return "", nil, false
+	}
 }
 
 func calleeFunc(typeInfo *types.Info, call *ast.CallExpr) *types.Func {

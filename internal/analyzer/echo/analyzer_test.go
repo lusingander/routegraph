@@ -171,6 +171,20 @@ func TestAnalyzeInstanceFields(t *testing.T) {
 	assertRoute(t, routes[1], "GET", "/admin/stats", "stats", true)
 }
 
+func TestAnalyzeChainedConstructorMethod(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/chained_constructor", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 1 {
+		t.Fatalf("len(routes) = %d, want 1: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "listUsers", true)
+}
+
 func TestAnalyzeControlFlow(t *testing.T) {
 	tree := analyzer.NewRouteTree()
 	if err := Analyze(context.Background(), "../../../testdata/control_flow", tree); err != nil {
