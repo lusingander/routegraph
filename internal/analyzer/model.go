@@ -50,17 +50,17 @@ type RouteTree struct {
 }
 
 type Route struct {
-	Framework string
+	Framework string `json:"framework"`
 
-	Method  string
-	Path    string
-	Handler string
+	Method  string `json:"method"`
+	Path    string `json:"path"`
+	Handler string `json:"handler"`
 
-	File string
-	Line int
+	File string `json:"file"`
+	Line int    `json:"line"`
 
-	Known    bool
-	Warnings []string
+	Known    bool     `json:"known"`
+	Warnings []string `json:"warnings"`
 }
 
 func NewRouteTree() *RouteTree {
