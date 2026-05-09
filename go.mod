@@ -3,6 +3,7 @@ module github.com/lusingander/routegraph
 go 1.26.2
 
 require (
+	github.com/alecthomas/kong v1.15.0
 	github.com/labstack/echo/v4 v4.15.2
 	golang.org/x/tools v0.45.0
 )

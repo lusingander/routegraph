@@ -37,7 +37,7 @@ func TestRunAcceptsRecursivePackagePattern(t *testing.T) {
 
 func TestRunPrintsJSON(t *testing.T) {
 	var out bytes.Buffer
-	if err := run(context.Background(), []string{"-json", "../../testdata/basic"}, &out); err != nil {
+	if err := run(context.Background(), []string{"--json", "../../testdata/basic"}, &out); err != nil {
 		t.Fatal(err)
 	}
 

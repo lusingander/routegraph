@@ -2,18 +2,18 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 
+	"github.com/alecthomas/kong"
 	"github.com/lusingander/routegraph"
 	"github.com/lusingander/routegraph/internal/printer"
 )
 
 type cliOptions struct {
-	dir        string
-	jsonOutput bool
+	JSON bool   `help:"Print routes as JSON."`
+	Dir  string `arg:"" optional:"" default:"." help:"Target directory or package pattern."`
 }
 
 func main() {
@@ -30,13 +30,13 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 
 	routes, err := routegraph.Analyze(ctx, routegraph.AnalyzeOptions{
-		Dir: opts.dir,
+		Dir: opts.Dir,
 	})
 	if err != nil {
 		return err
 	}
 
-	if opts.jsonOutput {
+	if opts.JSON {
 		return printer.PrintJSON(stdout, routes)
 	}
 	return printer.Print(stdout, routes)
@@ -44,16 +44,16 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 
 func parseOptions(args []string) (cliOptions, error) {
 	var opts cliOptions
-	fs := flag.NewFlagSet("goroute", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.BoolVar(&opts.jsonOutput, "json", false, "print routes as JSON")
-	if err := fs.Parse(args); err != nil {
+	parser, err := kong.New(&opts,
+		kong.Name("goroute"),
+		kong.Description("List Go web routes."),
+		kong.Writers(io.Discard, io.Discard),
+	)
+	if err != nil {
 		return opts, err
 	}
-
-	opts.dir = "."
-	if fs.NArg() > 0 {
-		opts.dir = fs.Arg(0)
+	if _, err := parser.Parse(args); err != nil {
+		return opts, err
 	}
 	return opts, nil
 }
