@@ -47,9 +47,9 @@ func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 	collectFileConsts(file, fileConsts)
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Body == nil {
+		if !ok || fn.Body == nil || fn.Recv != nil {
 			continue
 		}
-		analyzeFunc(fset, typeInfo, tree, funcs, fieldGroups, fn, fileConsts, nil, map[*ast.FuncDecl]bool{})
+		analyzeFunc(fset, typeInfo, tree, funcs, fieldGroups, fn, fileConsts, nil, nil, map[*ast.FuncDecl]bool{})
 	}
 }

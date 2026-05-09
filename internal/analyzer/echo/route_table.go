@@ -88,7 +88,7 @@ func structFieldNames(expr ast.Expr) []string {
 	return names
 }
 
-func analyzeRouteTableRange(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, routeTables map[string][]routeTableEntry, stmt *ast.RangeStmt) {
+func analyzeRouteTableRange(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, routeTables map[string][]routeTableEntry, stmt *ast.RangeStmt) {
 	tableIdent, ok := stmt.X.(*ast.Ident)
 	if !ok {
 		return
@@ -115,7 +115,7 @@ func analyzeRouteTableRange(fset *token.FileSet, typeInfo *types.Info, tree *ana
 		if !ok || selector.Sel.Name != "Add" {
 			continue
 		}
-		parentID, ok := receiverNodeID(typeInfo, fieldGroups, groups, selector.X)
+		parentID, ok := receiverNodeID(typeInfo, fieldGroups, groups, fields, selector.X)
 		if !ok {
 			continue
 		}

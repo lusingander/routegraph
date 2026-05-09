@@ -7,6 +7,11 @@ type Router struct {
 	admin *echo.Group
 }
 
+func Register(e *echo.Echo) {
+	router := NewRouter(e)
+	router.Register()
+}
+
 func NewRouter(e *echo.Echo) *Router {
 	api := e.Group("/api")
 	return &Router{
