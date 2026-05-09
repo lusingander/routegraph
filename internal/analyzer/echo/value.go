@@ -14,6 +14,7 @@ const (
 	valueUnknown valueKind = "unknown"
 	valueString  valueKind = "string"
 	valueGroup   valueKind = "group"
+	valueRoutes  valueKind = "routes"
 )
 
 type value struct {
@@ -21,6 +22,7 @@ type value struct {
 
 	String analyzer.PathExpr
 	Group  analyzer.NodeID
+	Routes []routeTableEntry
 }
 
 type env struct {
@@ -62,6 +64,18 @@ func (e env) group(name string) (analyzer.NodeID, bool) {
 		return 0, false
 	}
 	return value.Group, true
+}
+
+func (e env) setRoutes(name string, routes []routeTableEntry) {
+	e.values[name] = routesValueOf(routes)
+}
+
+func (e env) routes(name string) ([]routeTableEntry, bool) {
+	value, ok := e.values[name]
+	if !ok || value.Kind != valueRoutes {
+		return nil, false
+	}
+	return append([]routeTableEntry(nil), value.Routes...), true
 }
 
 func evalValue(e env, expr ast.Expr) value {
@@ -114,6 +128,13 @@ func groupValueOf(id analyzer.NodeID) value {
 	return value{
 		Kind:  valueGroup,
 		Group: id,
+	}
+}
+
+func routesValueOf(routes []routeTableEntry) value {
+	return value{
+		Kind:   valueRoutes,
+		Routes: append([]routeTableEntry(nil), routes...),
 	}
 }
 

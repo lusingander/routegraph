@@ -14,7 +14,7 @@ type routeTableEntry struct {
 	Handler string
 }
 
-func collectRouteTable(routeTables map[string][]routeTableEntry, consts map[string]string, stmt *ast.AssignStmt) {
+func collectRouteTable(routeTables map[string][]routeTableEntry, env env, stmt *ast.AssignStmt) {
 	for i, rhs := range stmt.Rhs {
 		if i >= len(stmt.Lhs) {
 			continue
@@ -23,15 +23,16 @@ func collectRouteTable(routeTables map[string][]routeTableEntry, consts map[stri
 		if !ok {
 			continue
 		}
-		entries, ok := routeTableEntries(rhs, consts)
+		entries, ok := routeTableEntries(rhs, env)
 		if !ok {
 			continue
 		}
 		routeTables[lhs.Name] = entries
+		env.setRoutes(lhs.Name, entries)
 	}
 }
 
-func routeTableEntries(expr ast.Expr, consts map[string]string) ([]routeTableEntry, bool) {
+func routeTableEntries(expr ast.Expr, env env) ([]routeTableEntry, bool) {
 	lit, ok := expr.(*ast.CompositeLit)
 	if !ok {
 		return nil, false
@@ -63,11 +64,11 @@ func routeTableEntries(expr ast.Expr, consts map[string]string) ([]routeTableEnt
 				fields[fieldNames[i]] = value
 			}
 		}
-		method, ok := stringValue(fields["method"], consts)
+		method, ok := stringValueFromEnv(fields["method"], env)
 		if !ok {
 			continue
 		}
-		path := pathExpr(fields["path"], consts)
+		path := pathExprFromEnv(fields["path"], env)
 		handler := handlerName(fields["handler"])
 		entries = append(entries, routeTableEntry{Method: method, Path: path, Handler: handler})
 	}
@@ -88,12 +89,15 @@ func structFieldNames(expr ast.Expr) []string {
 	return names
 }
 
-func analyzeRouteTableRange(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, routeTables map[string][]routeTableEntry, stmt *ast.RangeStmt) {
+func analyzeRouteTableRange(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, routeTables map[string][]routeTableEntry, env env, stmt *ast.RangeStmt) {
 	tableIdent, ok := stmt.X.(*ast.Ident)
 	if !ok {
 		return
 	}
 	entries := routeTables[tableIdent.Name]
+	if len(entries) == 0 {
+		entries, _ = env.routes(tableIdent.Name)
+	}
 	if len(entries) == 0 {
 		return
 	}

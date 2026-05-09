@@ -20,7 +20,11 @@ func pathExprFromEnv(expr ast.Expr, env env) analyzer.PathExpr {
 }
 
 func stringValue(expr ast.Expr, consts map[string]string) (string, bool) {
-	value := evalValue(newEnv(consts), expr)
+	return stringValueFromEnv(expr, newEnv(consts))
+}
+
+func stringValueFromEnv(expr ast.Expr, env env) (string, bool) {
+	value := evalValue(env, expr)
 	if value.Kind != valueString || !value.String.Known {
 		return "", false
 	}

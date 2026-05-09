@@ -126,7 +126,7 @@ func analyzeStmt(ctx *analysisContext, stmt ast.Stmt) {
 		analyzeDeclFuncCalls(ctx, stmt)
 	case *ast.AssignStmt:
 		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.env, stmt)
-		collectRouteTable(ctx.routeTables, ctx.consts, stmt)
+		collectRouteTable(ctx.routeTables, ctx.env, stmt)
 		analyzeAssignFuncCalls(ctx, stmt)
 	case *ast.ExprStmt:
 		analyzeExpr(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.env, stmt.X)
@@ -147,7 +147,7 @@ func analyzeStmt(ctx *analysisContext, stmt ast.Stmt) {
 		}
 	case *ast.RangeStmt:
 		nodeCount := len(ctx.tree.Nodes)
-		analyzeRouteTableRange(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.routeTables, stmt)
+		analyzeRouteTableRange(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.routeTables, ctx.env, stmt)
 		if len(ctx.tree.Nodes) == nodeCount {
 			analyzeBlock(ctx, stmt.Body)
 		}
