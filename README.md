@@ -5,7 +5,7 @@ routegraph is a static analyzer for Go web router definitions.
 It currently focuses on [Echo](https://echo.labstack.com/) and extracts route
 registrations such as `Group`, `GET`, `POST`, `Any`, and `Add` into a flat
 endpoint list. Nested groups, simple string constants, limited function splits,
-struct fields, and simple route tables are supported.
+struct fields, chained group calls, and simple route tables are supported.
 
 ## Install
 
@@ -28,6 +28,12 @@ Example output:
 GET   /api/v1/users        listUsers   internal/routes/user.go:24
 POST  /api/v1/users        createUser  internal/routes/user.go:25
 GET   /api/v1/admin/stats  stats       internal/routes/admin.go:18
+```
+
+Use `--json` for machine-readable output:
+
+```sh
+goroute --json ./...
 ```
 
 Unknown dynamic paths are kept instead of being dropped:
