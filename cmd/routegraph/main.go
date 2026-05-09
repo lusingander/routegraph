@@ -45,7 +45,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 func parseOptions(args []string) (cliOptions, error) {
 	var opts cliOptions
 	parser, err := kong.New(&opts,
-		kong.Name("goroute"),
+		kong.Name("routegraph"),
 		kong.Description("List Go web routes."),
 		kong.Writers(io.Discard, io.Discard),
 	)

@@ -10,16 +10,16 @@ struct fields, chained group calls, and simple route tables are supported.
 ## Install
 
 ```sh
-go install github.com/lusingander/routegraph/cmd/goroute@latest
+go install github.com/lusingander/routegraph/cmd/routegraph@latest
 ```
 
 ## CLI
 
-Run `goroute` with a target directory or package pattern:
+Run `routegraph` with a target directory or package pattern:
 
 ```sh
-goroute ./...
-goroute ./internal/server
+routegraph ./...
+routegraph ./internal/server
 ```
 
 Example output:
@@ -33,7 +33,7 @@ GET   /api/v1/admin/stats  stats       internal/routes/admin.go:18
 Use `--json` for machine-readable output:
 
 ```sh
-goroute --json ./...
+routegraph --json ./...
 ```
 
 Unknown dynamic paths are kept instead of being dropped:
