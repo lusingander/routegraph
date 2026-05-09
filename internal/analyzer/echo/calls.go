@@ -133,6 +133,7 @@ func analyzeFuncCall(ctx *analysisContext, expr ast.Expr) {
 	if !ok {
 		return
 	}
+	analyzeCallbackArgs(ctx, call)
 
 	callee := ctx.funcs[calleeFunc(ctx.typeInfo, call)]
 	if callee == nil || callee.Type.Params == nil {
@@ -152,6 +153,67 @@ func analyzeFuncCall(ctx *analysisContext, expr ast.Expr) {
 	}
 
 	analyzeFunc(ctx, callee, initialGroups, initialFields)
+}
+
+func analyzeCallbackArgs(ctx *analysisContext, call *ast.CallExpr) {
+	groupArgs := callGroupArgs(ctx, call)
+	if len(groupArgs) == 0 {
+		return
+	}
+	for _, arg := range call.Args {
+		lit, ok := arg.(*ast.FuncLit)
+		if !ok {
+			continue
+		}
+		initialGroups := funcLiteralGroups(ctx, lit, groupArgs)
+		if len(initialGroups) == 0 {
+			continue
+		}
+		analyzeFuncLiteral(ctx, lit, initialGroups)
+	}
+}
+
+func callGroupArgs(ctx *analysisContext, call *ast.CallExpr) []analyzer.NodeID {
+	var groupArgs []analyzer.NodeID
+	for _, arg := range call.Args {
+		if _, ok := arg.(*ast.FuncLit); ok {
+			continue
+		}
+		nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, ctx.groups, ctx.fields, arg)
+		if !ok {
+			nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, arg)
+		}
+		if ok {
+			groupArgs = append(groupArgs, nodeID)
+		}
+	}
+	return groupArgs
+}
+
+func funcLiteralGroups(ctx *analysisContext, lit *ast.FuncLit, groupArgs []analyzer.NodeID) map[string]analyzer.NodeID {
+	if lit.Type.Params == nil {
+		return nil
+	}
+	groups := map[string]analyzer.NodeID{}
+	groupIndex := 0
+	for _, field := range lit.Type.Params.List {
+		for _, name := range field.Names {
+			if groupIndex >= len(groupArgs) {
+				return groups
+			}
+			if isEchoParam(ctx.typeInfo, name) {
+				groups[name.Name] = groupArgs[groupIndex]
+				groupIndex++
+			}
+		}
+	}
+	return groups
+}
+
+func analyzeFuncLiteral(ctx *analysisContext, lit *ast.FuncLit, initialGroups map[string]analyzer.NodeID) {
+	litCtx := ctx.withCallBindings(initialGroups, nil)
+	collectBlockConsts(lit.Body, litCtx.consts)
+	analyzeBlock(litCtx, lit.Body)
 }
 
 func bindStructResult(ctx *analysisContext, name string, expr ast.Expr) {
