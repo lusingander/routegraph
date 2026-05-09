@@ -8,7 +8,11 @@ import (
 )
 
 func pathExpr(expr ast.Expr, consts map[string]string) analyzer.PathExpr {
-	value := evalValue(newEnv(consts), expr)
+	return pathExprFromEnv(expr, newEnv(consts))
+}
+
+func pathExprFromEnv(expr ast.Expr, env env) analyzer.PathExpr {
+	value := evalValue(env, expr)
 	if value.Kind == valueString {
 		return value.String
 	}

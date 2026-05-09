@@ -51,6 +51,7 @@ func analyzeFunc(ctx *analysisContext, fn funcInfo, initialGroups map[string]ana
 	fnCtx.fileConsts = fn.fileConsts
 	fnCtx.consts = cloneConsts(fn.fileConsts)
 	collectBlockConsts(fn.decl.Body, fnCtx.consts)
+	fnCtx.env = fnCtx.env.withConsts(fnCtx.consts)
 
 	analyzeBlock(fnCtx, fn.decl.Body)
 }
@@ -121,14 +122,14 @@ func analyzeStmt(ctx *analysisContext, stmt ast.Stmt) {
 	analyzeStructFields(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, stmt)
 	switch stmt := stmt.(type) {
 	case *ast.DeclStmt:
-		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, stmt)
+		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.env, stmt)
 		analyzeDeclFuncCalls(ctx, stmt)
 	case *ast.AssignStmt:
-		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, stmt)
+		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.env, stmt)
 		collectRouteTable(ctx.routeTables, ctx.consts, stmt)
 		analyzeAssignFuncCalls(ctx, stmt)
 	case *ast.ExprStmt:
-		analyzeExpr(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, stmt.X)
+		analyzeExpr(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.env, stmt.X)
 		analyzeFuncCall(ctx, stmt.X)
 	case *ast.IfStmt:
 		if stmt.Init != nil {
@@ -250,7 +251,7 @@ func callGroupArgs(ctx *analysisContext, call *ast.CallExpr) []analyzer.NodeID {
 		}
 		nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, ctx.groups, ctx.fields, arg)
 		if !ok {
-			nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, arg)
+			nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.env, arg)
 		}
 		if ok {
 			groupArgs = append(groupArgs, nodeID)
@@ -282,6 +283,7 @@ func funcLiteralGroups(ctx *analysisContext, lit *ast.FuncLit, groupArgs []analy
 func analyzeFuncLiteral(ctx *analysisContext, lit *ast.FuncLit, initialGroups map[string]analyzer.NodeID) {
 	litCtx := ctx.withCallBindings(initialGroups, nil)
 	collectBlockConsts(lit.Body, litCtx.consts)
+	litCtx.env = litCtx.env.withConsts(litCtx.consts)
 	analyzeBlock(litCtx, lit.Body)
 }
 
@@ -306,7 +308,7 @@ func callBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.CallEx
 			}
 			nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, groups, fields, call.Args[argIndex])
 			if !ok {
-				nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, call.Args[argIndex])
+				nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, ctx.env.withConsts(consts), call.Args[argIndex])
 			}
 			if ok && isEchoParam(callee.typeInfo, name) {
 				initialGroups[name.Name] = nodeID
@@ -377,10 +379,10 @@ func analyzeReturnPreludeStmt(ctx *analysisContext, groups map[string]analyzer.N
 	analyzeStructFields(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, stmt)
 	switch stmt := stmt.(type) {
 	case *ast.DeclStmt:
-		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, stmt)
+		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, ctx.env.withConsts(consts), stmt)
 		bindDeclStructResults(ctx, groups, fields, consts, stmt)
 	case *ast.AssignStmt:
-		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, stmt)
+		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, ctx.env.withConsts(consts), stmt)
 		for i, rhs := range stmt.Rhs {
 			if i >= len(stmt.Lhs) {
 				continue

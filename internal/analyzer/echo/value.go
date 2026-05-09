@@ -13,12 +13,14 @@ type valueKind string
 const (
 	valueUnknown valueKind = "unknown"
 	valueString  valueKind = "string"
+	valueGroup   valueKind = "group"
 )
 
 type value struct {
 	Kind valueKind
 
 	String analyzer.PathExpr
+	Group  analyzer.NodeID
 }
 
 type env struct {
@@ -31,6 +33,35 @@ func newEnv(consts map[string]string) env {
 		values: map[string]value{},
 		consts: consts,
 	}
+}
+
+func cloneEnv(e env) env {
+	values := make(map[string]value, len(e.values))
+	for name, value := range e.values {
+		values[name] = value
+	}
+	return env{
+		values: values,
+		consts: cloneConsts(e.consts),
+	}
+}
+
+func (e env) withConsts(consts map[string]string) env {
+	next := cloneEnv(e)
+	next.consts = cloneConsts(consts)
+	return next
+}
+
+func (e env) setGroup(name string, id analyzer.NodeID) {
+	e.values[name] = groupValueOf(id)
+}
+
+func (e env) group(name string) (analyzer.NodeID, bool) {
+	value, ok := e.values[name]
+	if !ok || value.Kind != valueGroup {
+		return 0, false
+	}
+	return value.Group, true
 }
 
 func evalValue(e env, expr ast.Expr) value {
@@ -76,6 +107,13 @@ func stringValueOf(path analyzer.PathExpr) value {
 	return value{
 		Kind:   valueString,
 		String: path,
+	}
+}
+
+func groupValueOf(id analyzer.NodeID) value {
+	return value{
+		Kind:  valueGroup,
+		Group: id,
 	}
 }
 

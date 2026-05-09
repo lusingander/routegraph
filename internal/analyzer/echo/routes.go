@@ -8,7 +8,7 @@ import (
 	"github.com/lusingander/routegraph/internal/analyzer"
 )
 
-func analyzeDecl(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, stmt *ast.DeclStmt) {
+func analyzeDecl(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, env env, stmt *ast.DeclStmt) {
 	genDecl, ok := stmt.Decl.(*ast.GenDecl)
 	if !ok || genDecl.Tok != token.VAR {
 		return
@@ -22,16 +22,17 @@ func analyzeDecl(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 			if i >= len(valueSpec.Names) {
 				continue
 			}
-			nodeID, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, consts, value)
+			nodeID, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, env, value)
 			if !ok {
 				continue
 			}
 			groups[valueSpec.Names[i].Name] = nodeID
+			env.setGroup(valueSpec.Names[i].Name, nodeID)
 		}
 	}
 }
 
-func analyzeAssign(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, stmt *ast.AssignStmt) {
+func analyzeAssign(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, env env, stmt *ast.AssignStmt) {
 	for i, rhs := range stmt.Rhs {
 		if i >= len(stmt.Lhs) {
 			continue
@@ -41,15 +42,16 @@ func analyzeAssign(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Rou
 			continue
 		}
 
-		nodeID, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, consts, rhs)
+		nodeID, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, env, rhs)
 		if !ok {
 			continue
 		}
 		groups[lhs.Name] = nodeID
+		env.setGroup(lhs.Name, nodeID)
 	}
 }
 
-func analyzeExpr(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, expr ast.Expr) {
+func analyzeExpr(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, env env, expr ast.Expr) {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return
@@ -58,30 +60,35 @@ func analyzeExpr(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 	if !ok || len(call.Args) < 2 {
 		return
 	}
-	route, ok := routeCallInfo(selector.Sel.Name, call.Args, consts)
+	route, ok := routeCallInfo(selector.Sel.Name, call.Args, env.consts)
 	if !ok {
 		return
 	}
 
-	parentID, ok := routeReceiverNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, consts, selector.X)
+	parentID, ok := routeReceiverNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, env, selector.X)
 	if !ok {
 		return
 	}
-	path := pathExpr(call.Args[route.PathArgIndex], consts)
+	path := pathExprFromEnv(call.Args[route.PathArgIndex], env)
 	handler := handlerName(call.Args[route.HandlerArgIndex])
 	for _, method := range route.Methods {
 		tree.AddRoute(parentID, analyzer.FrameworkEcho, method, path, handler, position(fset, call.Lparen))
 	}
 }
 
-func routeReceiverNodeID(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, expr ast.Expr) (analyzer.NodeID, bool) {
-	if nodeID, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, consts, expr); ok {
+func routeReceiverNodeID(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, env env, expr ast.Expr) (analyzer.NodeID, bool) {
+	if nodeID, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, env, expr); ok {
 		return nodeID, true
+	}
+	if ident, ok := expr.(*ast.Ident); ok {
+		if id, ok := env.group(ident.Name); ok {
+			return id, true
+		}
 	}
 	return receiverNodeID(typeInfo, fieldGroups, groups, fields, expr)
 }
 
-func groupCallNodeID(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, expr ast.Expr) (analyzer.NodeID, bool) {
+func groupCallNodeID(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, env env, expr ast.Expr) (analyzer.NodeID, bool) {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok || len(call.Args) == 0 {
 		return 0, false
@@ -94,6 +101,6 @@ func groupCallNodeID(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.R
 	if !ok {
 		return 0, false
 	}
-	path := pathExpr(call.Args[0], consts)
+	path := pathExprFromEnv(call.Args[0], env)
 	return tree.AddGroup(parentID, analyzer.FrameworkEcho, path, position(fset, call.Lparen)), true
 }

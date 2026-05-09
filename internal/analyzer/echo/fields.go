@@ -58,7 +58,7 @@ func structLiteralFieldGroups(fset *token.FileSet, typeInfo *types.Info, tree *a
 			result[field.Name] = id
 			continue
 		}
-		if id, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, consts, kv.Value); ok {
+		if id, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, newEnv(consts), kv.Value); ok {
 			result[field.Name] = id
 		}
 	}
