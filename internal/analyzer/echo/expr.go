@@ -3,50 +3,24 @@ package echo
 import (
 	"go/ast"
 	"go/token"
-	"strconv"
 
 	"github.com/lusingander/routegraph/internal/analyzer"
 )
 
 func pathExpr(expr ast.Expr, consts map[string]string) analyzer.PathExpr {
-	if value, ok := stringValue(expr, consts); ok {
-		return analyzer.KnownPath(value)
+	value := evalValue(newEnv(consts), expr)
+	if value.Kind == valueString {
+		return value.String
 	}
 	return analyzer.UnknownPath("dynamic path expression")
 }
 
 func stringValue(expr ast.Expr, consts map[string]string) (string, bool) {
-	switch expr := expr.(type) {
-	case *ast.BasicLit:
-		if expr.Kind != token.STRING {
-			return "", false
-		}
-		value, err := strconv.Unquote(expr.Value)
-		if err != nil {
-			return "", false
-		}
-		return value, true
-	case *ast.Ident:
-		value, ok := consts[expr.Name]
-		return value, ok
-	case *ast.BinaryExpr:
-		if expr.Op != token.ADD {
-			return "", false
-		}
-		left, ok := stringValue(expr.X, consts)
-		if !ok {
-			return "", false
-		}
-		right, ok := stringValue(expr.Y, consts)
-		if !ok {
-			return "", false
-		}
-		return left + right, true
-	case *ast.ParenExpr:
-		return stringValue(expr.X, consts)
-	default:
+	value := evalValue(newEnv(consts), expr)
+	if value.Kind != valueString || !value.String.Known {
 		return "", false
 	}
+	return value.String.Value, true
 }
 
 func collectPackageConsts(files []*ast.File) map[string]string {
