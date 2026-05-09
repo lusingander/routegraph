@@ -10,6 +10,8 @@ import (
 	"github.com/lusingander/routegraph/internal/analyzer"
 )
 
+type Analyzer struct{}
+
 func Analyze(ctx context.Context, dir string, tree *analyzer.RouteTree) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -19,6 +21,10 @@ func Analyze(ctx context.Context, dir string, tree *analyzer.RouteTree) error {
 		return err
 	}
 
+	return Analyzer{}.Analyze(ctx, pkgs, tree)
+}
+
+func (Analyzer) Analyze(ctx context.Context, pkgs []analyzer.GoPackage, tree *analyzer.RouteTree) error {
 	for _, pkg := range pkgs {
 		if len(pkg.Pkg.Errors) > 0 {
 			return fmt.Errorf("%s", pkg.Pkg.Errors[0])

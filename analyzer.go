@@ -14,9 +14,7 @@ type AnalyzeOptions struct {
 }
 
 func Analyze(ctx context.Context, opts AnalyzeOptions) ([]Route, error) {
-	tree := analyzer.NewRouteTree()
-	if err := echoanalyzer.Analyze(ctx, opts.Dir, tree); err != nil {
-		return nil, err
-	}
-	return analyzer.Flatten(tree), nil
+	return analyzer.Analyze(ctx, analyzer.AnalyzeOptions{
+		Dir: opts.Dir,
+	}, echoanalyzer.Analyzer{})
 }
