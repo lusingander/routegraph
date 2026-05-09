@@ -8,26 +8,30 @@ import (
 	"github.com/lusingander/routegraph/internal/analyzer"
 )
 
-func collectPackageFuncs(files []*ast.File) map[string]*ast.FuncDecl {
-	funcs := map[string]*ast.FuncDecl{}
+func collectPackageFuncs(typeInfo *types.Info, files []*ast.File) map[*types.Func]*ast.FuncDecl {
+	funcs := map[*types.Func]*ast.FuncDecl{}
 	for _, file := range files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil || fn.Recv != nil {
+			if !ok || fn.Body == nil {
 				continue
 			}
-			funcs[fn.Name.Name] = fn
+			obj, ok := typeInfo.Defs[fn.Name].(*types.Func)
+			if !ok {
+				continue
+			}
+			funcs[obj] = fn
 		}
 	}
 	return funcs
 }
 
-func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fn *ast.FuncDecl, fileConsts map[string]string, initialGroups map[string]analyzer.NodeID, visiting map[string]bool) {
-	if visiting[fn.Name.Name] {
+func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fn *ast.FuncDecl, fileConsts map[string]string, initialGroups map[string]analyzer.NodeID, visiting map[*ast.FuncDecl]bool) {
+	if visiting[fn] {
 		return
 	}
-	visiting[fn.Name.Name] = true
-	defer delete(visiting, fn.Name.Name)
+	visiting[fn] = true
+	defer delete(visiting, fn)
 
 	groups := cloneGroups(initialGroups)
 	routeTables := map[string][]routeTableEntry{}
@@ -51,16 +55,13 @@ func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 	}
 }
 
-func analyzeFuncCall(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, expr ast.Expr, visiting map[string]bool) {
+func analyzeFuncCall(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, expr ast.Expr, visiting map[*ast.FuncDecl]bool) {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return
 	}
-	calleeIdent, ok := call.Fun.(*ast.Ident)
-	if !ok {
-		return
-	}
-	callee := funcs[calleeIdent.Name]
+
+	callee := funcs[calleeFunc(typeInfo, call)]
 	if callee == nil || callee.Type.Params == nil {
 		return
 	}
@@ -73,6 +74,9 @@ func analyzeFuncCall(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.R
 				return
 			}
 			nodeID, ok := argumentNodeID(typeInfo, fieldGroups, groups, call.Args[argIndex])
+			if !ok {
+				nodeID, ok = groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fileConsts, call.Args[argIndex])
+			}
 			if ok && isEchoParam(typeInfo, name) {
 				initialGroups[name.Name] = nodeID
 			}
@@ -84,4 +88,21 @@ func analyzeFuncCall(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.R
 	}
 
 	analyzeFunc(fset, typeInfo, tree, funcs, fieldGroups, callee, fileConsts, initialGroups, visiting)
+}
+
+func calleeFunc(typeInfo *types.Info, call *ast.CallExpr) *types.Func {
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		fn, _ := typeInfo.Uses[fun].(*types.Func)
+		return fn
+	case *ast.SelectorExpr:
+		if selection := typeInfo.Selections[fun]; selection != nil {
+			fn, _ := selection.Obj().(*types.Func)
+			return fn
+		}
+		fn, _ := typeInfo.Uses[fun.Sel].(*types.Func)
+		return fn
+	default:
+		return nil
+	}
 }

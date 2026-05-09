@@ -30,7 +30,7 @@ func (Analyzer) Analyze(ctx context.Context, pkgs []analyzer.GoPackage, tree *an
 			return fmt.Errorf("%s", pkg.Pkg.Errors[0])
 		}
 		pkgConsts := collectPackageConsts(pkg.Pkg.Syntax)
-		funcs := collectPackageFuncs(pkg.Pkg.Syntax)
+		funcs := collectPackageFuncs(pkg.Pkg.TypesInfo, pkg.Pkg.Syntax)
 		fieldGroups := map[string]analyzer.NodeID{}
 		for _, file := range pkg.Pkg.Syntax {
 			if err := ctx.Err(); err != nil {
@@ -42,7 +42,7 @@ func (Analyzer) Analyze(ctx context.Context, pkgs []analyzer.GoPackage, tree *an
 	return nil
 }
 
-func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, file *ast.File, pkgConsts map[string]string) {
+func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, file *ast.File, pkgConsts map[string]string) {
 	fileConsts := cloneConsts(pkgConsts)
 	collectFileConsts(file, fileConsts)
 	for _, decl := range file.Decls {
@@ -50,6 +50,6 @@ func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 		if !ok || fn.Body == nil {
 			continue
 		}
-		analyzeFunc(fset, typeInfo, tree, funcs, fieldGroups, fn, fileConsts, nil, map[string]bool{})
+		analyzeFunc(fset, typeInfo, tree, funcs, fieldGroups, fn, fileConsts, nil, map[*ast.FuncDecl]bool{})
 	}
 }
