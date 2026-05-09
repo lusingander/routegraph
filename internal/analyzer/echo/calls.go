@@ -4,6 +4,9 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/lusingander/routegraph/internal/analyzer"
 )
@@ -31,6 +34,12 @@ func collectPackageFuncs(typeInfo *types.Info, files []*ast.File, fileConsts map
 }
 
 func analyzeFunc(ctx *analysisContext, fn funcInfo, initialGroups map[string]analyzer.NodeID, initialFields localFieldGroups) {
+	key := analysisKey(fn, initialGroups, initialFields)
+	if ctx.analyzed[key] {
+		return
+	}
+	ctx.analyzed[key] = true
+
 	if ctx.visiting[fn.decl] {
 		return
 	}
@@ -44,6 +53,59 @@ func analyzeFunc(ctx *analysisContext, fn funcInfo, initialGroups map[string]ana
 	collectBlockConsts(fn.decl.Body, fnCtx.consts)
 
 	analyzeBlock(fnCtx, fn.decl.Body)
+}
+
+func analysisKey(fn funcInfo, groups map[string]analyzer.NodeID, fields localFieldGroups) string {
+	var builder strings.Builder
+	builder.WriteString(funcKey(calleeObject(fn)))
+	builder.WriteString("|groups:")
+	writeGroupBindings(&builder, groups)
+	builder.WriteString("|fields:")
+	writeFieldBindings(&builder, fields)
+	return builder.String()
+}
+
+func calleeObject(fn funcInfo) *types.Func {
+	if fn.decl == nil || fn.typeInfo == nil {
+		return nil
+	}
+	if fn.decl.Recv != nil {
+		if obj, ok := fn.typeInfo.Defs[fn.decl.Name].(*types.Func); ok {
+			return obj
+		}
+	}
+	if obj, ok := fn.typeInfo.Defs[fn.decl.Name].(*types.Func); ok {
+		return obj
+	}
+	return nil
+}
+
+func writeGroupBindings(builder *strings.Builder, groups map[string]analyzer.NodeID) {
+	names := make([]string, 0, len(groups))
+	for name := range groups {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		builder.WriteString(name)
+		builder.WriteByte('=')
+		builder.WriteString(strconv.Itoa(int(groups[name])))
+		builder.WriteByte(';')
+	}
+}
+
+func writeFieldBindings(builder *strings.Builder, fields localFieldGroups) {
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		builder.WriteString(name)
+		builder.WriteByte('{')
+		writeGroupBindings(builder, fields[name])
+		builder.WriteString("};")
+	}
 }
 
 func analyzeBlock(ctx *analysisContext, block *ast.BlockStmt) {

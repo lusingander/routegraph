@@ -141,6 +141,22 @@ func TestAnalyzeFunctionSplitAcrossPackages(t *testing.T) {
 	assertRoute(t, routes[0], "GET", "/api/users", "listUsers", true)
 }
 
+func TestAnalyzeConvergingFunctionSplitOnce(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/function_converge", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 3 {
+		t.Fatalf("len(routes) = %d, want 3: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/health", "health", true)
+	assertRoute(t, routes[1], "GET", "/api/users", "listUsers", true)
+	assertRoute(t, routes[2], "GET", "/api/admins", "listAdmins", true)
+}
+
 func TestAnalyzeMethodCall(t *testing.T) {
 	tree := analyzer.NewRouteTree()
 	if err := Analyze(context.Background(), "../../../testdata/method_call", tree); err != nil {

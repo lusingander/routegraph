@@ -41,18 +41,19 @@ func (Analyzer) Analyze(ctx context.Context, pkgs []analyzer.GoPackage, tree *an
 		}
 	}
 	fieldGroups := map[string]analyzer.NodeID{}
+	analyzed := map[string]bool{}
 	for i, pkg := range pkgs {
 		for _, file := range pkg.Pkg.Syntax {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, funcs, funcNames, fieldGroups, file, pkgConsts[i])
+			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, funcs, funcNames, fieldGroups, analyzed, file, pkgConsts[i])
 		}
 	}
 	return nil
 }
 
-func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]funcInfo, funcNames map[string]funcInfo, fieldGroups map[string]analyzer.NodeID, file *ast.File, pkgConsts map[string]string) {
+func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]funcInfo, funcNames map[string]funcInfo, fieldGroups map[string]analyzer.NodeID, analyzed map[string]bool, file *ast.File, pkgConsts map[string]string) {
 	fileConsts := cloneConsts(pkgConsts)
 	collectFileConsts(file, fileConsts)
 	for _, decl := range file.Decls {
@@ -69,6 +70,7 @@ func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 			continue
 		}
 		ctx := newAnalysisContext(fset, typeInfo, tree, funcs, funcNames, fieldGroups, fileConsts)
+		ctx.analyzed = analyzed
 		analyzeFunc(ctx, info, nil, nil)
 	}
 }

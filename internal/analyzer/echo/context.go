@@ -22,6 +22,7 @@ type analysisContext struct {
 	routeTables map[string][]routeTableEntry
 	consts      map[string]string
 	visiting    map[*ast.FuncDecl]bool
+	analyzed    map[string]bool
 }
 
 type funcInfo struct {
@@ -44,6 +45,7 @@ func newAnalysisContext(fset *token.FileSet, typeInfo *types.Info, tree *analyze
 		routeTables: map[string][]routeTableEntry{},
 		consts:      cloneConsts(fileConsts),
 		visiting:    map[*ast.FuncDecl]bool{},
+		analyzed:    map[string]bool{},
 	}
 }
 
