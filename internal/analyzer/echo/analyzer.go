@@ -81,15 +81,36 @@ func analyzeExpr(fset *token.FileSet, tree *analyzer.RouteTree, groups map[strin
 	if !ok || len(call.Args) < 2 {
 		return
 	}
-	method, ok := routeMethods[selector.Sel.Name]
+	method, pathArgIndex, ok := routeMethod(selector.Sel.Name, call.Args, consts)
 	if !ok {
 		return
 	}
 
 	parentID := receiverNodeID(groups, selector.X)
-	path := pathExpr(call.Args[0], consts)
-	handler := handlerName(call.Args[1])
+	path := pathExpr(call.Args[pathArgIndex], consts)
+	handler := handlerName(call.Args[pathArgIndex+1])
 	tree.AddRoute(parentID, analyzer.FrameworkEcho, method, path, handler, position(fset, call.Lparen))
+}
+
+func routeMethod(name string, args []ast.Expr, consts map[string]string) (method string, pathArgIndex int, ok bool) {
+	if method, ok := routeMethods[name]; ok {
+		return method, 0, true
+	}
+	switch name {
+	case "Any":
+		return "ANY", 0, len(args) >= 2
+	case "Add":
+		if len(args) < 3 {
+			return "", 0, false
+		}
+		method, ok := stringValue(args[0], consts)
+		if !ok {
+			method = "UNKNOWN"
+		}
+		return method, 1, true
+	default:
+		return "", 0, false
+	}
 }
 
 func receiverNodeID(groups map[string]analyzer.NodeID, expr ast.Expr) analyzer.NodeID {

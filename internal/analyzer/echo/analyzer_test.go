@@ -53,6 +53,22 @@ func TestAnalyzeConstPath(t *testing.T) {
 	assertRoute(t, routes[2], "POST", "/api/v1/admin/stats", "createStat", true)
 }
 
+func TestAnalyzeAnyAdd(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/any_add", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 3 {
+		t.Fatalf("len(routes) = %d, want 3: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "ANY", "/health", "health", true)
+	assertRoute(t, routes[1], "GET", "/api/users", "listUsers", true)
+	assertRoute(t, routes[2], "UNKNOWN", "/api/dynamic", "dynamicHandler", true)
+}
+
 func assertRoute(t *testing.T, route analyzer.Route, method, path, handler string, known bool) {
 	t.Helper()
 	if route.Framework != string(analyzer.FrameworkEcho) {
