@@ -155,32 +155,16 @@ func analyzeFuncCall(ctx *analysisContext, expr ast.Expr) {
 }
 
 func bindStructResult(ctx *analysisContext, name string, expr ast.Expr) {
-	if structFields, _, ok := structLiteralFieldGroups(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, expr); ok {
+	if structFields, ok := structResultFields(ctx, expr, ctx.groups, ctx.fields, ctx.consts); ok {
 		ctx.fields[name] = structFields
-		return
-	}
-
-	call, ok := expr.(*ast.CallExpr)
-	if !ok {
-		return
-	}
-	callee := ctx.funcs[calleeFunc(ctx.typeInfo, call)]
-	if callee == nil {
-		return
-	}
-	initialGroups, initialFields, ok := callBindings(ctx, callee, call)
-	if !ok {
-		return
-	}
-	if recvName, recvFields, ok := receiverFieldBinding(ctx, callee, call); ok {
-		initialFields[recvName] = recvFields
-	}
-	if returnedFields, ok := returnedStructFields(ctx, callee, initialGroups, initialFields); ok {
-		ctx.fields[name] = returnedFields
 	}
 }
 
 func callBindings(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr) (map[string]analyzer.NodeID, localFieldGroups, bool) {
+	return callBindingsWithEnv(ctx, callee, call, ctx.groups, ctx.fields, ctx.consts)
+}
+
+func callBindingsWithEnv(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string) (map[string]analyzer.NodeID, localFieldGroups, bool) {
 	initialGroups := map[string]analyzer.NodeID{}
 	initialFields := localFieldGroups{}
 	argIndex := 0
@@ -189,9 +173,9 @@ func callBindings(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr
 			if argIndex >= len(call.Args) {
 				return nil, nil, false
 			}
-			nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, ctx.groups, ctx.fields, call.Args[argIndex])
+			nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, groups, fields, call.Args[argIndex])
 			if !ok {
-				nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, call.Args[argIndex])
+				nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, call.Args[argIndex])
 			}
 			if ok && isEchoParam(ctx.typeInfo, name) {
 				initialGroups[name.Name] = nodeID
@@ -214,8 +198,7 @@ func returnedStructFields(ctx *analysisContext, fn *ast.FuncDecl, groups map[str
 		ret, ok := stmt.(*ast.ReturnStmt)
 		if ok {
 			for _, result := range ret.Results {
-				structFields, _, ok := structLiteralFieldGroups(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, localGroups, localFields, localConsts, result)
-				if ok {
+				if structFields, ok := structResultFields(ctx, result, localGroups, localFields, localConsts); ok {
 					return structFields, true
 				}
 			}
@@ -226,11 +209,42 @@ func returnedStructFields(ctx *analysisContext, fn *ast.FuncDecl, groups map[str
 	return nil, false
 }
 
+func structResultFields(ctx *analysisContext, expr ast.Expr, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string) (map[string]analyzer.NodeID, bool) {
+	if structFields, _, ok := structLiteralFieldGroups(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, expr); ok {
+		return structFields, true
+	}
+	if ident, ok := expr.(*ast.Ident); ok {
+		structFields := fields[ident.Name]
+		if len(structFields) > 0 {
+			return cloneFieldGroup(structFields), true
+		}
+		return nil, false
+	}
+
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return nil, false
+	}
+	callee := ctx.funcs[calleeFunc(ctx.typeInfo, call)]
+	if callee == nil {
+		return nil, false
+	}
+	initialGroups, initialFields, ok := callBindingsWithEnv(ctx, callee, call, groups, fields, consts)
+	if !ok {
+		return nil, false
+	}
+	if recvName, recvFields, ok := receiverFieldBindingWithEnv(ctx, callee, call, groups, fields, consts); ok {
+		initialFields[recvName] = recvFields
+	}
+	return returnedStructFields(ctx, callee, initialGroups, initialFields)
+}
+
 func analyzeReturnPreludeStmt(ctx *analysisContext, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, stmt ast.Stmt) {
 	analyzeStructFields(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, stmt)
 	switch stmt := stmt.(type) {
 	case *ast.DeclStmt:
 		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, stmt)
+		bindDeclStructResults(ctx, groups, fields, consts, stmt)
 	case *ast.AssignStmt:
 		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, stmt)
 		for i, rhs := range stmt.Rhs {
@@ -241,14 +255,39 @@ func analyzeReturnPreludeStmt(ctx *analysisContext, groups map[string]analyzer.N
 			if !ok {
 				continue
 			}
-			if structFields, _, ok := structLiteralFieldGroups(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, rhs); ok {
+			if structFields, ok := structResultFields(ctx, rhs, groups, fields, consts); ok {
 				fields[lhs.Name] = structFields
 			}
 		}
 	}
 }
 
+func bindDeclStructResults(ctx *analysisContext, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, stmt *ast.DeclStmt) {
+	genDecl, ok := stmt.Decl.(*ast.GenDecl)
+	if !ok || genDecl.Tok != token.VAR {
+		return
+	}
+	for _, spec := range genDecl.Specs {
+		valueSpec, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			continue
+		}
+		for i, value := range valueSpec.Values {
+			if i >= len(valueSpec.Names) {
+				continue
+			}
+			if structFields, ok := structResultFields(ctx, value, groups, fields, consts); ok {
+				fields[valueSpec.Names[i].Name] = structFields
+			}
+		}
+	}
+}
+
 func receiverFieldBinding(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr) (string, map[string]analyzer.NodeID, bool) {
+	return receiverFieldBindingWithEnv(ctx, callee, call, ctx.groups, ctx.fields, ctx.consts)
+}
+
+func receiverFieldBindingWithEnv(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string) (string, map[string]analyzer.NodeID, bool) {
 	if callee.Recv == nil || len(callee.Recv.List) == 0 || len(callee.Recv.List[0].Names) == 0 {
 		return "", nil, false
 	}
@@ -259,7 +298,7 @@ func receiverFieldBinding(ctx *analysisContext, callee *ast.FuncDecl, call *ast.
 	recvName := callee.Recv.List[0].Names[0].Name
 	switch receiver := selector.X.(type) {
 	case *ast.Ident:
-		instanceFields := ctx.fields[receiver.Name]
+		instanceFields := fields[receiver.Name]
 		if len(instanceFields) == 0 {
 			return "", nil, false
 		}
@@ -269,11 +308,11 @@ func receiverFieldBinding(ctx *analysisContext, callee *ast.FuncDecl, call *ast.
 		if receiverCallee == nil {
 			return "", nil, false
 		}
-		initialGroups, initialFields, ok := callBindings(ctx, receiverCallee, receiver)
+		initialGroups, initialFields, ok := callBindingsWithEnv(ctx, receiverCallee, receiver, groups, fields, consts)
 		if !ok {
 			return "", nil, false
 		}
-		if nestedRecvName, nestedRecvFields, ok := receiverFieldBinding(ctx, receiverCallee, receiver); ok {
+		if nestedRecvName, nestedRecvFields, ok := receiverFieldBindingWithEnv(ctx, receiverCallee, receiver, groups, fields, consts); ok {
 			initialFields[nestedRecvName] = nestedRecvFields
 		}
 		returnedFields, ok := returnedStructFields(ctx, receiverCallee, initialGroups, initialFields)
