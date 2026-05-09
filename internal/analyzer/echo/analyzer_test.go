@@ -37,6 +37,22 @@ func TestAnalyzeUnknownPath(t *testing.T) {
 	assertRoute(t, routes[0], "GET", "<unknown>/users", "listUsers", false)
 }
 
+func TestAnalyzeConstPath(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/const_path", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 3 {
+		t.Fatalf("len(routes) = %d, want 3: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/v1/users", "listUsers", true)
+	assertRoute(t, routes[1], "GET", "/api/v1/users/:id", "getUser", true)
+	assertRoute(t, routes[2], "POST", "/api/v1/admin/stats", "createStat", true)
+}
+
 func assertRoute(t *testing.T, route analyzer.Route, method, path, handler string, known bool) {
 	t.Helper()
 	if route.Framework != string(analyzer.FrameworkEcho) {
