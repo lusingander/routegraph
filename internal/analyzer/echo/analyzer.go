@@ -77,6 +77,6 @@ func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 			ctx.env.setRoutes(name, entries)
 		}
 		ctx.analyzed = analyzed
-		analyzeFunc(ctx, info, nil, nil)
+		analyzeFunc(ctx, info, nil, nil, nil)
 	}
 }

@@ -33,8 +33,8 @@ func collectPackageFuncs(typeInfo *types.Info, files []*ast.File, fileConsts map
 	return funcs
 }
 
-func analyzeFunc(ctx *analysisContext, fn funcInfo, initialGroups map[string]analyzer.NodeID, initialFields localFieldGroups) {
-	key := analysisKey(fn, initialGroups, initialFields)
+func analyzeFunc(ctx *analysisContext, fn funcInfo, initialGroups map[string]analyzer.NodeID, initialFields localFieldGroups, initialValues map[string]value) {
+	key := analysisKey(fn, initialGroups, initialFields, initialValues)
 	if ctx.analyzed[key] {
 		return
 	}
@@ -46,7 +46,7 @@ func analyzeFunc(ctx *analysisContext, fn funcInfo, initialGroups map[string]ana
 	ctx.visiting[fn.decl] = true
 	defer delete(ctx.visiting, fn.decl)
 
-	fnCtx := ctx.withCallBindings(initialGroups, initialFields)
+	fnCtx := ctx.withCallBindings(initialGroups, initialFields, initialValues)
 	fnCtx.typeInfo = fn.typeInfo
 	fnCtx.fileConsts = fn.fileConsts
 	fnCtx.consts = cloneConsts(fn.fileConsts)
@@ -56,13 +56,15 @@ func analyzeFunc(ctx *analysisContext, fn funcInfo, initialGroups map[string]ana
 	analyzeBlock(fnCtx, fn.decl.Body)
 }
 
-func analysisKey(fn funcInfo, groups map[string]analyzer.NodeID, fields localFieldGroups) string {
+func analysisKey(fn funcInfo, groups map[string]analyzer.NodeID, fields localFieldGroups, values map[string]value) string {
 	var builder strings.Builder
 	builder.WriteString(funcKey(calleeObject(fn)))
 	builder.WriteString("|groups:")
 	writeGroupBindings(&builder, groups)
 	builder.WriteString("|fields:")
 	writeFieldBindings(&builder, fields)
+	builder.WriteString("|values:")
+	writeValueBindings(&builder, values)
 	return builder.String()
 }
 
@@ -106,6 +108,52 @@ func writeFieldBindings(builder *strings.Builder, fields localFieldGroups) {
 		builder.WriteByte('{')
 		writeGroupBindings(builder, fields[name])
 		builder.WriteString("};")
+	}
+}
+
+func writeValueBindings(builder *strings.Builder, values map[string]value) {
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		builder.WriteString(name)
+		builder.WriteByte('=')
+		writeValueKey(builder, values[name])
+		builder.WriteByte(';')
+	}
+}
+
+func writeValueKey(builder *strings.Builder, value value) {
+	builder.WriteString(string(value.Kind))
+	switch value.Kind {
+	case valueString:
+		builder.WriteByte(':')
+		builder.WriteString(value.String.Value)
+	case valueStrings:
+		for _, item := range value.Strings {
+			builder.WriteByte(':')
+			builder.WriteString(item.Value)
+		}
+	case valueGroup:
+		builder.WriteByte(':')
+		builder.WriteString(strconv.Itoa(int(value.Group)))
+	case valueRoutes:
+		builder.WriteByte(':')
+		builder.WriteString(strconv.Itoa(len(value.Routes)))
+	case valueStruct:
+		fieldNames := make([]string, 0, len(value.Fields))
+		for name := range value.Fields {
+			fieldNames = append(fieldNames, name)
+		}
+		sort.Strings(fieldNames)
+		for _, name := range fieldNames {
+			builder.WriteByte(':')
+			builder.WriteString(name)
+			builder.WriteByte('=')
+			writeValueKey(builder, value.Fields[name])
+		}
 	}
 }
 
@@ -215,14 +263,18 @@ func analyzeFuncCall(ctx *analysisContext, expr ast.Expr) {
 		return
 	}
 
+	initialValues := map[string]value{}
+	if recvName, recvValue, ok := receiverValueBinding(ctx, callee.decl, call); ok {
+		initialValues[recvName] = recvValue
+	}
 	if recvName, recvFields, ok := receiverFieldBinding(ctx, callee.decl, call); ok {
 		initialFields[recvName] = recvFields
 	}
-	if len(initialGroups) == 0 && len(initialFields) == 0 {
+	if len(initialGroups) == 0 && len(initialFields) == 0 && len(initialValues) == 0 {
 		return
 	}
 
-	analyzeFunc(ctx, callee, initialGroups, initialFields)
+	analyzeFunc(ctx, callee, initialGroups, initialFields, initialValues)
 }
 
 func analyzeCallbackArgs(ctx *analysisContext, call *ast.CallExpr) {
@@ -281,7 +333,7 @@ func funcLiteralGroups(ctx *analysisContext, lit *ast.FuncLit, groupArgs []analy
 }
 
 func analyzeFuncLiteral(ctx *analysisContext, lit *ast.FuncLit, initialGroups map[string]analyzer.NodeID) {
-	litCtx := ctx.withCallBindings(initialGroups, nil)
+	litCtx := ctx.withCallBindings(initialGroups, nil, nil)
 	collectBlockConsts(lit.Body, litCtx.consts)
 	litCtx.env = litCtx.env.withConsts(litCtx.consts)
 	analyzeBlock(litCtx, lit.Body)
@@ -421,6 +473,21 @@ func bindDeclStructResults(ctx *analysisContext, groups map[string]analyzer.Node
 
 func receiverFieldBinding(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr) (string, map[string]analyzer.NodeID, bool) {
 	return receiverFieldBindingWithEnv(ctx, callee, call, ctx.groups, ctx.fields, ctx.consts)
+}
+
+func receiverValueBinding(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr) (string, value, bool) {
+	if callee.Recv == nil || len(callee.Recv.List) == 0 || len(callee.Recv.List[0].Names) == 0 {
+		return "", value{}, false
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return "", value{}, false
+	}
+	receiver := evalValue(ctx.env, selector.X)
+	if receiver.Kind == valueUnknown {
+		return "", value{}, false
+	}
+	return callee.Recv.List[0].Names[0].Name, receiver, true
 }
 
 func receiverFieldBindingWithEnv(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string) (string, map[string]analyzer.NodeID, bool) {

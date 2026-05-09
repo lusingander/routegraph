@@ -51,7 +51,7 @@ func newAnalysisContext(fset *token.FileSet, typeInfo *types.Info, tree *analyze
 	}
 }
 
-func (ctx *analysisContext) withCallBindings(groups map[string]analyzer.NodeID, fields localFieldGroups) *analysisContext {
+func (ctx *analysisContext) withCallBindings(groups map[string]analyzer.NodeID, fields localFieldGroups, values map[string]value) *analysisContext {
 	next := *ctx
 	next.groups = cloneGroups(groups)
 	next.fields = cloneLocalFieldGroups(fields)
@@ -60,6 +60,9 @@ func (ctx *analysisContext) withCallBindings(groups map[string]analyzer.NodeID, 
 	next.env = ctx.env.withConsts(ctx.fileConsts)
 	for name, id := range groups {
 		next.env.setGroup(name, id)
+	}
+	for name, value := range values {
+		next.env.values[name] = cloneValue(value)
 	}
 	return &next
 }
