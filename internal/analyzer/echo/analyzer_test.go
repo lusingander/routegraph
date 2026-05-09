@@ -83,6 +83,21 @@ func TestAnalyzeSkipsNonEchoReceivers(t *testing.T) {
 	assertRoute(t, routes[0], "GET", "/ok", "realHandler", true)
 }
 
+func TestAnalyzeFunctionSplit(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/function_split", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 2 {
+		t.Fatalf("len(routes) = %d, want 2: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "listUsers", true)
+	assertRoute(t, routes[1], "POST", "/api/users", "createUser", true)
+}
+
 func assertRoute(t *testing.T, route analyzer.Route, method, path, handler string, known bool) {
 	t.Helper()
 	if route.Framework != string(analyzer.FrameworkEcho) {

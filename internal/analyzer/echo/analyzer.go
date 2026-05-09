@@ -25,17 +25,18 @@ func Analyze(ctx context.Context, dir string, tree *analyzer.RouteTree) error {
 			return fmt.Errorf("%s", pkg.Pkg.Errors[0])
 		}
 		pkgConsts := collectPackageConsts(pkg.Pkg.Syntax)
+		funcs := collectPackageFuncs(pkg.Pkg.Syntax)
 		for _, file := range pkg.Pkg.Syntax {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, file, pkgConsts)
+			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, funcs, file, pkgConsts)
 		}
 	}
 	return nil
 }
 
-func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, file *ast.File, pkgConsts map[string]string) {
+func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, file *ast.File, pkgConsts map[string]string) {
 	fileConsts := cloneConsts(pkgConsts)
 	collectFileConsts(file, fileConsts)
 	for _, decl := range file.Decls {
@@ -43,12 +44,32 @@ func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 		if !ok || fn.Body == nil {
 			continue
 		}
-		analyzeFunc(fset, typeInfo, tree, fn, fileConsts)
+		analyzeFunc(fset, typeInfo, tree, funcs, fn, fileConsts, nil, map[string]bool{})
 	}
 }
 
-func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fn *ast.FuncDecl, fileConsts map[string]string) {
-	groups := map[string]analyzer.NodeID{}
+func collectPackageFuncs(files []*ast.File) map[string]*ast.FuncDecl {
+	funcs := map[string]*ast.FuncDecl{}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil || fn.Recv != nil {
+				continue
+			}
+			funcs[fn.Name.Name] = fn
+		}
+	}
+	return funcs
+}
+
+func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, fn *ast.FuncDecl, fileConsts map[string]string, initialGroups map[string]analyzer.NodeID, visiting map[string]bool) {
+	if visiting[fn.Name.Name] {
+		return
+	}
+	visiting[fn.Name.Name] = true
+	defer delete(visiting, fn.Name.Name)
+
+	groups := cloneGroups(initialGroups)
 	consts := cloneConsts(fileConsts)
 	collectBlockConsts(fn.Body, consts)
 
@@ -58,8 +79,44 @@ func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 			analyzeAssign(fset, typeInfo, tree, groups, consts, stmt)
 		case *ast.ExprStmt:
 			analyzeExpr(fset, typeInfo, tree, groups, consts, stmt.X)
+			analyzeFuncCall(fset, typeInfo, tree, funcs, fileConsts, groups, stmt.X, visiting)
 		}
 	}
+}
+
+func analyzeFuncCall(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, fileConsts map[string]string, groups map[string]analyzer.NodeID, expr ast.Expr, visiting map[string]bool) {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return
+	}
+	calleeIdent, ok := call.Fun.(*ast.Ident)
+	if !ok {
+		return
+	}
+	callee := funcs[calleeIdent.Name]
+	if callee == nil || callee.Type.Params == nil {
+		return
+	}
+
+	initialGroups := map[string]analyzer.NodeID{}
+	argIndex := 0
+	for _, field := range callee.Type.Params.List {
+		for _, name := range field.Names {
+			if argIndex >= len(call.Args) {
+				return
+			}
+			nodeID, ok := argumentNodeID(typeInfo, groups, call.Args[argIndex])
+			if ok && isEchoParam(typeInfo, name) {
+				initialGroups[name.Name] = nodeID
+			}
+			argIndex++
+		}
+	}
+	if len(initialGroups) == 0 {
+		return
+	}
+
+	analyzeFunc(fset, typeInfo, tree, funcs, callee, fileConsts, initialGroups, visiting)
 }
 
 func analyzeAssign(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, groups map[string]analyzer.NodeID, consts map[string]string, stmt *ast.AssignStmt) {
@@ -130,43 +187,66 @@ func routeMethod(name string, args []ast.Expr, consts map[string]string) (method
 	}
 }
 
-func receiverNodeID(typeInfo *types.Info, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
-	if !isEchoReceiver(typeInfo, expr) {
+func argumentNodeID(typeInfo *types.Info, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
+	kind := echoTypeKind(typeInfo, expr)
+	if kind == "" {
 		return 0, false
 	}
 	ident, ok := expr.(*ast.Ident)
 	if !ok {
-		return 0, true
+		return 0, kind == "Echo"
 	}
 	if id, ok := groups[ident.Name]; ok {
 		return id, true
 	}
-	return 0, true
+	return 0, kind == "Echo"
 }
 
-func isEchoReceiver(typeInfo *types.Info, expr ast.Expr) bool {
+func receiverNodeID(typeInfo *types.Info, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
+	return argumentNodeID(typeInfo, groups, expr)
+}
+
+func isEchoParam(typeInfo *types.Info, ident *ast.Ident) bool {
+	return echoObjectKind(typeInfo.ObjectOf(ident)) != ""
+}
+
+func echoTypeKind(typeInfo *types.Info, expr ast.Expr) string {
 	if typeInfo == nil {
-		return false
+		return ""
 	}
 	t := typeInfo.TypeOf(expr)
 	if t == nil {
-		return false
+		return ""
 	}
+	return echoTypeName(t)
+}
+
+func echoObjectKind(obj types.Object) string {
+	if obj == nil {
+		return ""
+	}
+	return echoTypeName(obj.Type())
+}
+
+func echoTypeName(t types.Type) string {
 	if ptr, ok := t.(*types.Pointer); ok {
 		t = ptr.Elem()
 	}
 	named, ok := t.(*types.Named)
 	if !ok {
-		return false
+		return ""
 	}
 	obj := named.Obj()
 	if obj == nil || obj.Pkg() == nil {
-		return false
+		return ""
 	}
 	if obj.Pkg().Path() != "github.com/labstack/echo/v4" {
-		return false
+		return ""
 	}
-	return obj.Name() == "Echo" || obj.Name() == "Group"
+	if obj.Name() != "Echo" && obj.Name() != "Group" {
+		return ""
+	}
+	return obj.Name()
 }
 
 func pathExpr(expr ast.Expr, consts map[string]string) analyzer.PathExpr {
@@ -273,6 +353,14 @@ func cloneConsts(consts map[string]string) map[string]string {
 	cloned := make(map[string]string, len(consts))
 	for name, value := range consts {
 		cloned[name] = value
+	}
+	return cloned
+}
+
+func cloneGroups(groups map[string]analyzer.NodeID) map[string]analyzer.NodeID {
+	cloned := make(map[string]analyzer.NodeID, len(groups))
+	for name, id := range groups {
+		cloned[name] = id
 	}
 	return cloned
 }
