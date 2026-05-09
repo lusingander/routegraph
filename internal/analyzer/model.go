@@ -115,6 +115,24 @@ func (t *RouteTree) AddRoute(parentID NodeID, framework Framework, method string
 	return id
 }
 
+func (t *RouteTree) Node(id NodeID) (RouteNode, bool) {
+	if id < 0 || int(id) >= len(t.Nodes) {
+		return RouteNode{}, false
+	}
+	return t.Nodes[id], true
+}
+
+func (t *RouteTree) Children(parentID NodeID) []RouteNode {
+	children := make([]RouteNode, 0)
+	for _, node := range t.Nodes {
+		if node.ParentID == nil || *node.ParentID != parentID {
+			continue
+		}
+		children = append(children, node)
+	}
+	return children
+}
+
 func Flatten(tree *RouteTree) []Route {
 	routes := make([]Route, 0)
 	for _, node := range tree.Nodes {

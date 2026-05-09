@@ -198,6 +198,7 @@ func TestAnalyzeDynamicRoutePath(t *testing.T) {
 
 	assertRoute(t, routes[0], "GET", "/api/<unknown>", "dynamicHandler", false)
 	assertRoute(t, routes[1], "UNKNOWN", "/api/<unknown>", "dynamicAddHandler", false)
+	assertDynamicRoutePathTree(t, tree)
 }
 
 func assertRoute(t *testing.T, route analyzer.Route, method, path, handler string, known bool) {
@@ -234,6 +235,23 @@ func assertBasicTree(t *testing.T, tree *analyzer.RouteTree) {
 	assertNode(t, tree.Nodes[4], analyzer.NodeKindRoute, "POST", "/api/v1/users", nodeIDPtr(2))
 	assertNode(t, tree.Nodes[5], analyzer.NodeKindGroup, "", "/api/v1/admin", nodeIDPtr(2))
 	assertNode(t, tree.Nodes[6], analyzer.NodeKindRoute, "GET", "/api/v1/admin/stats", nodeIDPtr(5))
+}
+
+func assertDynamicRoutePathTree(t *testing.T, tree *analyzer.RouteTree) {
+	t.Helper()
+	if len(tree.Nodes) != 4 {
+		t.Fatalf("len(tree.Nodes) = %d, want 4: %#v", len(tree.Nodes), tree.Nodes)
+	}
+	assertNode(t, tree.Nodes[0], analyzer.NodeKindRoot, "", "/", nil)
+	assertNode(t, tree.Nodes[1], analyzer.NodeKindGroup, "", "/api", nodeIDPtr(0))
+	assertNode(t, tree.Nodes[2], analyzer.NodeKindRoute, "GET", "/api/<unknown>", nodeIDPtr(1))
+	assertNode(t, tree.Nodes[3], analyzer.NodeKindRoute, "UNKNOWN", "/api/<unknown>", nodeIDPtr(1))
+	if tree.Nodes[2].FullPath.Known {
+		t.Fatalf("node 2 FullPath.Known = true, want false")
+	}
+	if tree.Nodes[3].FullPath.Known {
+		t.Fatalf("node 3 FullPath.Known = true, want false")
+	}
 }
 
 func assertNode(t *testing.T, node analyzer.RouteNode, kind analyzer.NodeKind, method, path string, parentID *analyzer.NodeID) {
