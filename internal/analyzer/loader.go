@@ -18,6 +18,7 @@ func LoadGoFiles(dir string) (*token.FileSet, []GoFile, error) {
 	if dir == "" {
 		dir = "."
 	}
+	dir = normalizeDirPattern(dir)
 
 	fset := token.NewFileSet()
 	var files []GoFile
@@ -46,4 +47,18 @@ func LoadGoFiles(dir string) (*token.FileSet, []GoFile, error) {
 		return nil, nil, err
 	}
 	return fset, files, nil
+}
+
+func normalizeDirPattern(dir string) string {
+	if dir == "..." {
+		return "."
+	}
+	if strings.HasSuffix(dir, "/...") {
+		base := strings.TrimSuffix(dir, "/...")
+		if base == "" {
+			return "."
+		}
+		return base
+	}
+	return dir
 }
