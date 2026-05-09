@@ -16,6 +16,8 @@ type routeCall struct {
 	Methods         []string
 	PathArgIndex    int
 	HandlerArgIndex int
+	HandlerName     string
+	StaticWildcard  bool
 }
 
 func routeCallInfo(name string, args []ast.Expr, env env) (routeCall, bool) {
@@ -64,6 +66,34 @@ func routeCallInfo(name string, args []ast.Expr, env env) (routeCall, bool) {
 			Methods:         methods,
 			PathArgIndex:    1,
 			HandlerArgIndex: 2,
+		}, true
+	case "Static", "StaticFS":
+		if len(args) < 2 {
+			return routeCall{}, false
+		}
+		return routeCall{
+			Methods:        []string{"GET"},
+			PathArgIndex:   0,
+			HandlerName:    "<static>",
+			StaticWildcard: true,
+		}, true
+	case "File", "FileFS":
+		if len(args) < 2 {
+			return routeCall{}, false
+		}
+		return routeCall{
+			Methods:      []string{"GET"},
+			PathArgIndex: 0,
+			HandlerName:  "<file>",
+		}, true
+	case "RouteNotFound":
+		if len(args) < 2 {
+			return routeCall{}, false
+		}
+		return routeCall{
+			Methods:         []string{"ROUTE_NOT_FOUND"},
+			PathArgIndex:    0,
+			HandlerArgIndex: 1,
 		}, true
 	default:
 		return routeCall{}, false

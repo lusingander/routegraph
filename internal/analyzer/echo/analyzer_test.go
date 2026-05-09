@@ -351,6 +351,25 @@ func TestAnalyzePackageRouteTable(t *testing.T) {
 	assertRoute(t, routes[2], "DELETE", "/api/users/:id", "deleteUser", true)
 }
 
+func TestAnalyzeStaticFileAndRouteNotFound(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/static_file", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 6 {
+		t.Fatalf("len(routes) = %d, want 6: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/assets/*", "<static>", true)
+	assertRoute(t, routes[1], "GET", "/", "<file>", true)
+	assertRoute(t, routes[2], "ROUTE_NOT_FOUND", "/*", "notFound", true)
+	assertRoute(t, routes[3], "GET", "/api/docs/*", "<static>", true)
+	assertRoute(t, routes[4], "GET", "/api/openapi.json", "<file>", true)
+	assertRoute(t, routes[5], "ROUTE_NOT_FOUND", "/api/*", "apiNotFound", true)
+}
+
 func TestAnalyzeEchoCoverageRefinements(t *testing.T) {
 	tree := analyzer.NewRouteTree()
 	if err := Analyze(context.Background(), "../../../testdata/echo_refinement", tree); err != nil {

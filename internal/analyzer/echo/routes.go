@@ -80,7 +80,13 @@ func analyzeExpr(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 		return
 	}
 	path := pathExprFromEnv(call.Args[route.PathArgIndex], env)
-	handler := handlerName(call.Args[route.HandlerArgIndex])
+	if route.StaticWildcard {
+		path = analyzer.JoinPath(path, analyzer.KnownPath("*"))
+	}
+	handler := route.HandlerName
+	if handler == "" && route.HandlerArgIndex >= 0 {
+		handler = handlerName(call.Args[route.HandlerArgIndex])
+	}
 	for _, method := range route.Methods {
 		tree.AddRoute(parentID, analyzer.FrameworkEcho, method, path, handler, position(fset, call.Lparen))
 	}
