@@ -156,6 +156,22 @@ func TestAnalyzeConstructorMethodCall(t *testing.T) {
 	assertRoute(t, routes[0], "GET", "/api/users", "listUsers", true)
 }
 
+func TestAnalyzeControlFlow(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/control_flow", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 3 {
+		t.Fatalf("len(routes) = %d, want 3: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "listUsers", true)
+	assertRoute(t, routes[1], "GET", "/api/fallback", "fallback", true)
+	assertRoute(t, routes[2], "GET", "/api/health", "health", true)
+}
+
 func TestAnalyzeSkipsUncalledHelper(t *testing.T) {
 	tree := analyzer.NewRouteTree()
 	if err := Analyze(context.Background(), "../../../testdata/helper_only", tree); err != nil {

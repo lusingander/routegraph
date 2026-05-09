@@ -38,22 +38,62 @@ func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 	consts := cloneConsts(fileConsts)
 	collectBlockConsts(fn.Body, consts)
 
-	for _, stmt := range fn.Body.List {
-		analyzeStructFields(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
-		switch stmt := stmt.(type) {
-		case *ast.DeclStmt:
-			analyzeDecl(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
-			analyzeDeclFuncCalls(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, stmt, visiting)
-		case *ast.AssignStmt:
-			analyzeAssign(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
-			collectRouteTable(routeTables, consts, stmt)
-			analyzeAssignFuncCalls(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, stmt, visiting)
-		case *ast.ExprStmt:
-			analyzeExpr(fset, typeInfo, tree, fieldGroups, groups, consts, stmt.X)
-			analyzeFuncCall(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, stmt.X, visiting)
-		case *ast.RangeStmt:
-			analyzeRouteTableRange(fset, typeInfo, tree, fieldGroups, groups, routeTables, stmt)
+	analyzeBlock(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, routeTables, consts, fn.Body, visiting)
+}
+
+func analyzeBlock(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, routeTables map[string][]routeTableEntry, consts map[string]string, block *ast.BlockStmt, visiting map[*ast.FuncDecl]bool) {
+	if block == nil {
+		return
+	}
+	for _, stmt := range block.List {
+		analyzeStmt(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, routeTables, consts, stmt, visiting)
+	}
+}
+
+func analyzeStmt(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, routeTables map[string][]routeTableEntry, consts map[string]string, stmt ast.Stmt, visiting map[*ast.FuncDecl]bool) {
+	analyzeStructFields(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
+	switch stmt := stmt.(type) {
+	case *ast.DeclStmt:
+		analyzeDecl(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
+		analyzeDeclFuncCalls(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, stmt, visiting)
+	case *ast.AssignStmt:
+		analyzeAssign(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
+		collectRouteTable(routeTables, consts, stmt)
+		analyzeAssignFuncCalls(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, stmt, visiting)
+	case *ast.ExprStmt:
+		analyzeExpr(fset, typeInfo, tree, fieldGroups, groups, consts, stmt.X)
+		analyzeFuncCall(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, stmt.X, visiting)
+	case *ast.IfStmt:
+		if stmt.Init != nil {
+			analyzeStmt(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, routeTables, consts, stmt.Init, visiting)
 		}
+		analyzeBlock(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, routeTables, consts, stmt.Body, visiting)
+		analyzeElse(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, routeTables, consts, stmt.Else, visiting)
+	case *ast.ForStmt:
+		if stmt.Init != nil {
+			analyzeStmt(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, routeTables, consts, stmt.Init, visiting)
+		}
+		analyzeBlock(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, routeTables, consts, stmt.Body, visiting)
+		if stmt.Post != nil {
+			analyzeStmt(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, routeTables, consts, stmt.Post, visiting)
+		}
+	case *ast.RangeStmt:
+		nodeCount := len(tree.Nodes)
+		analyzeRouteTableRange(fset, typeInfo, tree, fieldGroups, groups, routeTables, stmt)
+		if len(tree.Nodes) == nodeCount {
+			analyzeBlock(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, routeTables, consts, stmt.Body, visiting)
+		}
+	}
+}
+
+func analyzeElse(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, routeTables map[string][]routeTableEntry, consts map[string]string, stmt ast.Stmt, visiting map[*ast.FuncDecl]bool) {
+	switch stmt := stmt.(type) {
+	case nil:
+		return
+	case *ast.BlockStmt:
+		analyzeBlock(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, routeTables, consts, stmt, visiting)
+	case *ast.IfStmt:
+		analyzeStmt(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, routeTables, consts, stmt, visiting)
 	}
 }
 
