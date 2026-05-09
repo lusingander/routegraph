@@ -50,6 +50,7 @@ func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 		if !ok || fn.Body == nil || fn.Recv != nil {
 			continue
 		}
-		analyzeFunc(fset, typeInfo, tree, funcs, fieldGroups, fn, fileConsts, nil, nil, map[*ast.FuncDecl]bool{})
+		ctx := newAnalysisContext(fset, typeInfo, tree, funcs, fieldGroups, fileConsts)
+		analyzeFunc(ctx, fn, nil, nil)
 	}
 }

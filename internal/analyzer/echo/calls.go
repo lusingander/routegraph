@@ -26,79 +26,76 @@ func collectPackageFuncs(typeInfo *types.Info, files []*ast.File) map[*types.Fun
 	return funcs
 }
 
-func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fn *ast.FuncDecl, fileConsts map[string]string, initialGroups map[string]analyzer.NodeID, initialFields localFieldGroups, visiting map[*ast.FuncDecl]bool) {
-	if visiting[fn] {
+func analyzeFunc(ctx *analysisContext, fn *ast.FuncDecl, initialGroups map[string]analyzer.NodeID, initialFields localFieldGroups) {
+	if ctx.visiting[fn] {
 		return
 	}
-	visiting[fn] = true
-	defer delete(visiting, fn)
+	ctx.visiting[fn] = true
+	defer delete(ctx.visiting, fn)
 
-	groups := cloneGroups(initialGroups)
-	fields := cloneLocalFieldGroups(initialFields)
-	routeTables := map[string][]routeTableEntry{}
-	consts := cloneConsts(fileConsts)
-	collectBlockConsts(fn.Body, consts)
+	fnCtx := ctx.withCallBindings(initialGroups, initialFields)
+	collectBlockConsts(fn.Body, fnCtx.consts)
 
-	analyzeBlock(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, routeTables, consts, fn.Body, visiting)
+	analyzeBlock(fnCtx, fn.Body)
 }
 
-func analyzeBlock(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, fields localFieldGroups, routeTables map[string][]routeTableEntry, consts map[string]string, block *ast.BlockStmt, visiting map[*ast.FuncDecl]bool) {
+func analyzeBlock(ctx *analysisContext, block *ast.BlockStmt) {
 	if block == nil {
 		return
 	}
 	for _, stmt := range block.List {
-		analyzeStmt(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, routeTables, consts, stmt, visiting)
+		analyzeStmt(ctx, stmt)
 	}
 }
 
-func analyzeStmt(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, fields localFieldGroups, routeTables map[string][]routeTableEntry, consts map[string]string, stmt ast.Stmt, visiting map[*ast.FuncDecl]bool) {
-	analyzeStructFields(fset, typeInfo, tree, fieldGroups, groups, fields, consts, stmt)
+func analyzeStmt(ctx *analysisContext, stmt ast.Stmt) {
+	analyzeStructFields(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, stmt)
 	switch stmt := stmt.(type) {
 	case *ast.DeclStmt:
-		analyzeDecl(fset, typeInfo, tree, fieldGroups, groups, fields, consts, stmt)
-		analyzeDeclFuncCalls(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, stmt, visiting)
+		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, stmt)
+		analyzeDeclFuncCalls(ctx, stmt)
 	case *ast.AssignStmt:
-		analyzeAssign(fset, typeInfo, tree, fieldGroups, groups, fields, consts, stmt)
-		collectRouteTable(routeTables, consts, stmt)
-		analyzeAssignFuncCalls(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, consts, stmt, visiting)
+		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, stmt)
+		collectRouteTable(ctx.routeTables, ctx.consts, stmt)
+		analyzeAssignFuncCalls(ctx, stmt)
 	case *ast.ExprStmt:
-		analyzeExpr(fset, typeInfo, tree, fieldGroups, groups, fields, consts, stmt.X)
-		analyzeFuncCall(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, stmt.X, visiting)
+		analyzeExpr(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, stmt.X)
+		analyzeFuncCall(ctx, stmt.X)
 	case *ast.IfStmt:
 		if stmt.Init != nil {
-			analyzeStmt(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, routeTables, consts, stmt.Init, visiting)
+			analyzeStmt(ctx, stmt.Init)
 		}
-		analyzeBlock(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, routeTables, consts, stmt.Body, visiting)
-		analyzeElse(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, routeTables, consts, stmt.Else, visiting)
+		analyzeBlock(ctx, stmt.Body)
+		analyzeElse(ctx, stmt.Else)
 	case *ast.ForStmt:
 		if stmt.Init != nil {
-			analyzeStmt(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, routeTables, consts, stmt.Init, visiting)
+			analyzeStmt(ctx, stmt.Init)
 		}
-		analyzeBlock(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, routeTables, consts, stmt.Body, visiting)
+		analyzeBlock(ctx, stmt.Body)
 		if stmt.Post != nil {
-			analyzeStmt(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, routeTables, consts, stmt.Post, visiting)
+			analyzeStmt(ctx, stmt.Post)
 		}
 	case *ast.RangeStmt:
-		nodeCount := len(tree.Nodes)
-		analyzeRouteTableRange(fset, typeInfo, tree, fieldGroups, groups, fields, routeTables, stmt)
-		if len(tree.Nodes) == nodeCount {
-			analyzeBlock(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, routeTables, consts, stmt.Body, visiting)
+		nodeCount := len(ctx.tree.Nodes)
+		analyzeRouteTableRange(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.routeTables, stmt)
+		if len(ctx.tree.Nodes) == nodeCount {
+			analyzeBlock(ctx, stmt.Body)
 		}
 	}
 }
 
-func analyzeElse(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, fields localFieldGroups, routeTables map[string][]routeTableEntry, consts map[string]string, stmt ast.Stmt, visiting map[*ast.FuncDecl]bool) {
+func analyzeElse(ctx *analysisContext, stmt ast.Stmt) {
 	switch stmt := stmt.(type) {
 	case nil:
 		return
 	case *ast.BlockStmt:
-		analyzeBlock(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, routeTables, consts, stmt, visiting)
+		analyzeBlock(ctx, stmt)
 	case *ast.IfStmt:
-		analyzeStmt(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, routeTables, consts, stmt, visiting)
+		analyzeStmt(ctx, stmt)
 	}
 }
 
-func analyzeDeclFuncCalls(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, fields localFieldGroups, stmt *ast.DeclStmt, visiting map[*ast.FuncDecl]bool) {
+func analyzeDeclFuncCalls(ctx *analysisContext, stmt *ast.DeclStmt) {
 	genDecl, ok := stmt.Decl.(*ast.GenDecl)
 	if !ok || genDecl.Tok != token.VAR {
 		return
@@ -109,17 +106,17 @@ func analyzeDeclFuncCalls(fset *token.FileSet, typeInfo *types.Info, tree *analy
 			continue
 		}
 		for i, value := range valueSpec.Values {
-			analyzeFuncCall(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, value, visiting)
+			analyzeFuncCall(ctx, value)
 			if i < len(valueSpec.Names) {
-				bindStructResult(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, valueSpec.Names[i].Name, value, visiting)
+				bindStructResult(ctx, valueSpec.Names[i].Name, value)
 			}
 		}
 	}
 }
 
-func analyzeAssignFuncCalls(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, stmt *ast.AssignStmt, visiting map[*ast.FuncDecl]bool) {
+func analyzeAssignFuncCalls(ctx *analysisContext, stmt *ast.AssignStmt) {
 	for i, rhs := range stmt.Rhs {
-		analyzeFuncCall(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, rhs, visiting)
+		analyzeFuncCall(ctx, rhs)
 		if i >= len(stmt.Lhs) {
 			continue
 		}
@@ -127,39 +124,39 @@ func analyzeAssignFuncCalls(fset *token.FileSet, typeInfo *types.Info, tree *ana
 		if !ok {
 			continue
 		}
-		bindStructResult(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, lhs.Name, rhs, visiting)
+		bindStructResult(ctx, lhs.Name, rhs)
 	}
 }
 
-func analyzeFuncCall(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, fields localFieldGroups, expr ast.Expr, visiting map[*ast.FuncDecl]bool) {
+func analyzeFuncCall(ctx *analysisContext, expr ast.Expr) {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return
 	}
 
-	callee := funcs[calleeFunc(typeInfo, call)]
+	callee := ctx.funcs[calleeFunc(ctx.typeInfo, call)]
 	if callee == nil || callee.Type.Params == nil {
 		return
 	}
 
-	initialGroups, initialFields, ok := callBindings(fset, typeInfo, tree, fieldGroups, groups, fields, fileConsts, callee, call)
+	initialGroups, initialFields, ok := callBindings(ctx, callee, call)
 	if !ok {
 		return
 	}
 
-	if recvName, recvFields, ok := receiverFieldBinding(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, fields, callee, call, visiting); ok {
+	if recvName, recvFields, ok := receiverFieldBinding(ctx, callee, call); ok {
 		initialFields[recvName] = recvFields
 	}
 	if len(initialGroups) == 0 && len(initialFields) == 0 {
 		return
 	}
 
-	analyzeFunc(fset, typeInfo, tree, funcs, fieldGroups, callee, fileConsts, initialGroups, initialFields, visiting)
+	analyzeFunc(ctx, callee, initialGroups, initialFields)
 }
 
-func bindStructResult(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, consts map[string]string, groups map[string]analyzer.NodeID, fields localFieldGroups, name string, expr ast.Expr, visiting map[*ast.FuncDecl]bool) {
-	if structFields, _, ok := structLiteralFieldGroups(fset, typeInfo, tree, fieldGroups, groups, fields, consts, expr); ok {
-		fields[name] = structFields
+func bindStructResult(ctx *analysisContext, name string, expr ast.Expr) {
+	if structFields, _, ok := structLiteralFieldGroups(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, expr); ok {
+		ctx.fields[name] = structFields
 		return
 	}
 
@@ -167,23 +164,23 @@ func bindStructResult(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.
 	if !ok {
 		return
 	}
-	callee := funcs[calleeFunc(typeInfo, call)]
+	callee := ctx.funcs[calleeFunc(ctx.typeInfo, call)]
 	if callee == nil {
 		return
 	}
-	initialGroups, initialFields, ok := callBindings(fset, typeInfo, tree, fieldGroups, groups, fields, consts, callee, call)
+	initialGroups, initialFields, ok := callBindings(ctx, callee, call)
 	if !ok {
 		return
 	}
-	if recvName, recvFields, ok := receiverFieldBinding(fset, typeInfo, tree, funcs, fieldGroups, consts, groups, fields, callee, call, visiting); ok {
+	if recvName, recvFields, ok := receiverFieldBinding(ctx, callee, call); ok {
 		initialFields[recvName] = recvFields
 	}
-	if returnedFields, ok := returnedStructFields(fset, typeInfo, tree, fieldGroups, consts, callee, initialGroups, initialFields, visiting); ok {
-		fields[name] = returnedFields
+	if returnedFields, ok := returnedStructFields(ctx, callee, initialGroups, initialFields); ok {
+		ctx.fields[name] = returnedFields
 	}
 }
 
-func callBindings(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, callee *ast.FuncDecl, call *ast.CallExpr) (map[string]analyzer.NodeID, localFieldGroups, bool) {
+func callBindings(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr) (map[string]analyzer.NodeID, localFieldGroups, bool) {
 	initialGroups := map[string]analyzer.NodeID{}
 	initialFields := localFieldGroups{}
 	argIndex := 0
@@ -192,11 +189,11 @@ func callBindings(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Rout
 			if argIndex >= len(call.Args) {
 				return nil, nil, false
 			}
-			nodeID, ok := argumentNodeID(typeInfo, fieldGroups, groups, fields, call.Args[argIndex])
+			nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, ctx.groups, ctx.fields, call.Args[argIndex])
 			if !ok {
-				nodeID, ok = groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, consts, call.Args[argIndex])
+				nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, call.Args[argIndex])
 			}
-			if ok && isEchoParam(typeInfo, name) {
+			if ok && isEchoParam(ctx.typeInfo, name) {
 				initialGroups[name.Name] = nodeID
 			}
 			argIndex++
@@ -205,37 +202,37 @@ func callBindings(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Rout
 	return initialGroups, initialFields, true
 }
 
-func returnedStructFields(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, consts map[string]string, fn *ast.FuncDecl, groups map[string]analyzer.NodeID, fields localFieldGroups, visiting map[*ast.FuncDecl]bool) (map[string]analyzer.NodeID, bool) {
-	if visiting[fn] {
+func returnedStructFields(ctx *analysisContext, fn *ast.FuncDecl, groups map[string]analyzer.NodeID, fields localFieldGroups) (map[string]analyzer.NodeID, bool) {
+	if ctx.visiting[fn] {
 		return nil, false
 	}
 	localGroups := cloneGroups(groups)
 	localFields := cloneLocalFieldGroups(fields)
-	localConsts := cloneConsts(consts)
+	localConsts := cloneConsts(ctx.consts)
 	collectBlockConsts(fn.Body, localConsts)
 	for _, stmt := range fn.Body.List {
 		ret, ok := stmt.(*ast.ReturnStmt)
 		if ok {
 			for _, result := range ret.Results {
-				structFields, _, ok := structLiteralFieldGroups(fset, typeInfo, tree, fieldGroups, localGroups, localFields, localConsts, result)
+				structFields, _, ok := structLiteralFieldGroups(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, localGroups, localFields, localConsts, result)
 				if ok {
 					return structFields, true
 				}
 			}
 			continue
 		}
-		analyzeReturnPreludeStmt(fset, typeInfo, tree, fieldGroups, localGroups, localFields, localConsts, stmt)
+		analyzeReturnPreludeStmt(ctx, localGroups, localFields, localConsts, stmt)
 	}
 	return nil, false
 }
 
-func analyzeReturnPreludeStmt(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, stmt ast.Stmt) {
-	analyzeStructFields(fset, typeInfo, tree, fieldGroups, groups, fields, consts, stmt)
+func analyzeReturnPreludeStmt(ctx *analysisContext, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, stmt ast.Stmt) {
+	analyzeStructFields(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, stmt)
 	switch stmt := stmt.(type) {
 	case *ast.DeclStmt:
-		analyzeDecl(fset, typeInfo, tree, fieldGroups, groups, fields, consts, stmt)
+		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, stmt)
 	case *ast.AssignStmt:
-		analyzeAssign(fset, typeInfo, tree, fieldGroups, groups, fields, consts, stmt)
+		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, stmt)
 		for i, rhs := range stmt.Rhs {
 			if i >= len(stmt.Lhs) {
 				continue
@@ -244,14 +241,14 @@ func analyzeReturnPreludeStmt(fset *token.FileSet, typeInfo *types.Info, tree *a
 			if !ok {
 				continue
 			}
-			if structFields, _, ok := structLiteralFieldGroups(fset, typeInfo, tree, fieldGroups, groups, fields, consts, rhs); ok {
+			if structFields, _, ok := structLiteralFieldGroups(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, rhs); ok {
 				fields[lhs.Name] = structFields
 			}
 		}
 	}
 }
 
-func receiverFieldBinding(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, consts map[string]string, groups map[string]analyzer.NodeID, fields localFieldGroups, callee *ast.FuncDecl, call *ast.CallExpr, visiting map[*ast.FuncDecl]bool) (string, map[string]analyzer.NodeID, bool) {
+func receiverFieldBinding(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr) (string, map[string]analyzer.NodeID, bool) {
 	if callee.Recv == nil || len(callee.Recv.List) == 0 || len(callee.Recv.List[0].Names) == 0 {
 		return "", nil, false
 	}
@@ -262,24 +259,24 @@ func receiverFieldBinding(fset *token.FileSet, typeInfo *types.Info, tree *analy
 	recvName := callee.Recv.List[0].Names[0].Name
 	switch receiver := selector.X.(type) {
 	case *ast.Ident:
-		instanceFields := fields[receiver.Name]
+		instanceFields := ctx.fields[receiver.Name]
 		if len(instanceFields) == 0 {
 			return "", nil, false
 		}
 		return recvName, cloneFieldGroup(instanceFields), true
 	case *ast.CallExpr:
-		receiverCallee := funcs[calleeFunc(typeInfo, receiver)]
+		receiverCallee := ctx.funcs[calleeFunc(ctx.typeInfo, receiver)]
 		if receiverCallee == nil {
 			return "", nil, false
 		}
-		initialGroups, initialFields, ok := callBindings(fset, typeInfo, tree, fieldGroups, groups, fields, consts, receiverCallee, receiver)
+		initialGroups, initialFields, ok := callBindings(ctx, receiverCallee, receiver)
 		if !ok {
 			return "", nil, false
 		}
-		if nestedRecvName, nestedRecvFields, ok := receiverFieldBinding(fset, typeInfo, tree, funcs, fieldGroups, consts, groups, fields, receiverCallee, receiver, visiting); ok {
+		if nestedRecvName, nestedRecvFields, ok := receiverFieldBinding(ctx, receiverCallee, receiver); ok {
 			initialFields[nestedRecvName] = nestedRecvFields
 		}
-		returnedFields, ok := returnedStructFields(fset, typeInfo, tree, fieldGroups, consts, receiverCallee, initialGroups, initialFields, visiting)
+		returnedFields, ok := returnedStructFields(ctx, receiverCallee, initialGroups, initialFields)
 		if !ok {
 			return "", nil, false
 		}
