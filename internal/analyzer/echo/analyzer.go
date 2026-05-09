@@ -26,17 +26,18 @@ func Analyze(ctx context.Context, dir string, tree *analyzer.RouteTree) error {
 		}
 		pkgConsts := collectPackageConsts(pkg.Pkg.Syntax)
 		funcs := collectPackageFuncs(pkg.Pkg.Syntax)
+		fieldGroups := map[string]analyzer.NodeID{}
 		for _, file := range pkg.Pkg.Syntax {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, funcs, file, pkgConsts)
+			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, funcs, fieldGroups, file, pkgConsts)
 		}
 	}
 	return nil
 }
 
-func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, file *ast.File, pkgConsts map[string]string) {
+func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, file *ast.File, pkgConsts map[string]string) {
 	fileConsts := cloneConsts(pkgConsts)
 	collectFileConsts(file, fileConsts)
 	for _, decl := range file.Decls {
@@ -44,7 +45,7 @@ func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 		if !ok || fn.Body == nil {
 			continue
 		}
-		analyzeFunc(fset, typeInfo, tree, funcs, fn, fileConsts, nil, map[string]bool{})
+		analyzeFunc(fset, typeInfo, tree, funcs, fieldGroups, fn, fileConsts, nil, map[string]bool{})
 	}
 }
 
@@ -62,7 +63,7 @@ func collectPackageFuncs(files []*ast.File) map[string]*ast.FuncDecl {
 	return funcs
 }
 
-func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, fn *ast.FuncDecl, fileConsts map[string]string, initialGroups map[string]analyzer.NodeID, visiting map[string]bool) {
+func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fn *ast.FuncDecl, fileConsts map[string]string, initialGroups map[string]analyzer.NodeID, visiting map[string]bool) {
 	if visiting[fn.Name.Name] {
 		return
 	}
@@ -74,17 +75,18 @@ func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 	collectBlockConsts(fn.Body, consts)
 
 	for _, stmt := range fn.Body.List {
+		analyzeStructFields(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
 		switch stmt := stmt.(type) {
 		case *ast.AssignStmt:
-			analyzeAssign(fset, typeInfo, tree, groups, consts, stmt)
+			analyzeAssign(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
 		case *ast.ExprStmt:
-			analyzeExpr(fset, typeInfo, tree, groups, consts, stmt.X)
-			analyzeFuncCall(fset, typeInfo, tree, funcs, fileConsts, groups, stmt.X, visiting)
+			analyzeExpr(fset, typeInfo, tree, fieldGroups, groups, consts, stmt.X)
+			analyzeFuncCall(fset, typeInfo, tree, funcs, fieldGroups, fileConsts, groups, stmt.X, visiting)
 		}
 	}
 }
 
-func analyzeFuncCall(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, fileConsts map[string]string, groups map[string]analyzer.NodeID, expr ast.Expr, visiting map[string]bool) {
+func analyzeFuncCall(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[string]*ast.FuncDecl, fieldGroups map[string]analyzer.NodeID, fileConsts map[string]string, groups map[string]analyzer.NodeID, expr ast.Expr, visiting map[string]bool) {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return
@@ -105,7 +107,7 @@ func analyzeFuncCall(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.R
 			if argIndex >= len(call.Args) {
 				return
 			}
-			nodeID, ok := argumentNodeID(typeInfo, groups, call.Args[argIndex])
+			nodeID, ok := argumentNodeID(typeInfo, fieldGroups, groups, call.Args[argIndex])
 			if ok && isEchoParam(typeInfo, name) {
 				initialGroups[name.Name] = nodeID
 			}
@@ -116,10 +118,10 @@ func analyzeFuncCall(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.R
 		return
 	}
 
-	analyzeFunc(fset, typeInfo, tree, funcs, callee, fileConsts, initialGroups, visiting)
+	analyzeFunc(fset, typeInfo, tree, funcs, fieldGroups, callee, fileConsts, initialGroups, visiting)
 }
 
-func analyzeAssign(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, groups map[string]analyzer.NodeID, consts map[string]string, stmt *ast.AssignStmt) {
+func analyzeAssign(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, consts map[string]string, stmt *ast.AssignStmt) {
 	for i, rhs := range stmt.Rhs {
 		call, ok := rhs.(*ast.CallExpr)
 		if !ok {
@@ -134,7 +136,7 @@ func analyzeAssign(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Rou
 			continue
 		}
 
-		parentID, ok := receiverNodeID(typeInfo, groups, selector.X)
+		parentID, ok := receiverNodeID(typeInfo, fieldGroups, groups, selector.X)
 		if !ok {
 			continue
 		}
@@ -143,7 +145,7 @@ func analyzeAssign(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Rou
 	}
 }
 
-func analyzeExpr(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, groups map[string]analyzer.NodeID, consts map[string]string, expr ast.Expr) {
+func analyzeExpr(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, consts map[string]string, expr ast.Expr) {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return
@@ -157,13 +159,69 @@ func analyzeExpr(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 		return
 	}
 
-	parentID, ok := receiverNodeID(typeInfo, groups, selector.X)
+	parentID, ok := receiverNodeID(typeInfo, fieldGroups, groups, selector.X)
 	if !ok {
 		return
 	}
 	path := pathExpr(call.Args[pathArgIndex], consts)
 	handler := handlerName(call.Args[pathArgIndex+1])
 	tree.AddRoute(parentID, analyzer.FrameworkEcho, method, path, handler, position(fset, call.Lparen))
+}
+
+func analyzeStructFields(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, consts map[string]string, stmt ast.Stmt) {
+	switch stmt := stmt.(type) {
+	case *ast.ReturnStmt:
+		for _, result := range stmt.Results {
+			analyzeStructLiteral(fset, typeInfo, tree, fieldGroups, groups, consts, result)
+		}
+	case *ast.AssignStmt:
+		for _, rhs := range stmt.Rhs {
+			analyzeStructLiteral(fset, typeInfo, tree, fieldGroups, groups, consts, rhs)
+		}
+	}
+}
+
+func analyzeStructLiteral(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, consts map[string]string, expr ast.Expr) {
+	if unary, ok := expr.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+		expr = unary.X
+	}
+	lit, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return
+	}
+	structName := structTypeName(typeInfo.TypeOf(lit))
+	if structName == "" {
+		return
+	}
+
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		field, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		if id, ok := argumentNodeID(typeInfo, fieldGroups, groups, kv.Value); ok {
+			fieldGroups[structName+"."+field.Name] = id
+			continue
+		}
+		call, ok := kv.Value.(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "Group" || len(call.Args) == 0 {
+			continue
+		}
+		parentID, ok := receiverNodeID(typeInfo, fieldGroups, groups, selector.X)
+		if !ok {
+			continue
+		}
+		path := pathExpr(call.Args[0], consts)
+		fieldGroups[structName+"."+field.Name] = tree.AddGroup(parentID, analyzer.FrameworkEcho, path, position(fset, call.Lparen))
+	}
 }
 
 func routeMethod(name string, args []ast.Expr, consts map[string]string) (method string, pathArgIndex int, ok bool) {
@@ -187,10 +245,15 @@ func routeMethod(name string, args []ast.Expr, consts map[string]string) (method
 	}
 }
 
-func argumentNodeID(typeInfo *types.Info, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
+func argumentNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
 	kind := echoTypeKind(typeInfo, expr)
 	if kind == "" {
 		return 0, false
+	}
+	if fieldSelector, ok := expr.(*ast.SelectorExpr); ok {
+		if id, ok := fieldNodeID(typeInfo, fieldGroups, fieldSelector); ok {
+			return id, true
+		}
 	}
 	ident, ok := expr.(*ast.Ident)
 	if !ok {
@@ -202,8 +265,8 @@ func argumentNodeID(typeInfo *types.Info, groups map[string]analyzer.NodeID, exp
 	return 0, kind == "Echo"
 }
 
-func receiverNodeID(typeInfo *types.Info, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
-	return argumentNodeID(typeInfo, groups, expr)
+func receiverNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
+	return argumentNodeID(typeInfo, fieldGroups, groups, expr)
 }
 
 func isEchoParam(typeInfo *types.Info, ident *ast.Ident) bool {
@@ -244,6 +307,33 @@ func echoTypeName(t types.Type) string {
 		return ""
 	}
 	if obj.Name() != "Echo" && obj.Name() != "Group" {
+		return ""
+	}
+	return obj.Name()
+}
+
+func fieldNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, selector *ast.SelectorExpr) (analyzer.NodeID, bool) {
+	structName := structTypeName(typeInfo.TypeOf(selector.X))
+	if structName == "" {
+		return 0, false
+	}
+	id, ok := fieldGroups[structName+"."+selector.Sel.Name]
+	return id, ok
+}
+
+func structTypeName(t types.Type) string {
+	if t == nil {
+		return ""
+	}
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	named, ok := t.(*types.Named)
+	if !ok {
+		return ""
+	}
+	obj := named.Obj()
+	if obj == nil {
 		return ""
 	}
 	return obj.Name()
