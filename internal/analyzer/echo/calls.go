@@ -37,6 +37,8 @@ func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 	for _, stmt := range fn.Body.List {
 		analyzeStructFields(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
 		switch stmt := stmt.(type) {
+		case *ast.DeclStmt:
+			analyzeDecl(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
 		case *ast.AssignStmt:
 			analyzeAssign(fset, typeInfo, tree, fieldGroups, groups, consts, stmt)
 			collectRouteTable(routeTables, consts, stmt)

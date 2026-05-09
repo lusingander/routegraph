@@ -47,19 +47,8 @@ func analyzeStructLiteral(fset *token.FileSet, typeInfo *types.Info, tree *analy
 			fieldGroups[structName+"."+field.Name] = id
 			continue
 		}
-		call, ok := kv.Value.(*ast.CallExpr)
-		if !ok {
-			continue
+		if id, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, consts, kv.Value); ok {
+			fieldGroups[structName+"."+field.Name] = id
 		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || selector.Sel.Name != "Group" || len(call.Args) == 0 {
-			continue
-		}
-		parentID, ok := receiverNodeID(typeInfo, fieldGroups, groups, selector.X)
-		if !ok {
-			continue
-		}
-		path := pathExpr(call.Args[0], consts)
-		fieldGroups[structName+"."+field.Name] = tree.AddGroup(parentID, analyzer.FrameworkEcho, path, position(fset, call.Lparen))
 	}
 }

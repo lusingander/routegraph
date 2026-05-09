@@ -185,6 +185,23 @@ func TestAnalyzeRouteTable(t *testing.T) {
 	assertRoute(t, routes[2], "GET", "/api/admin/stats", "stats", true)
 }
 
+func TestAnalyzeEchoCoverageRefinements(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/echo_refinement", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 4 {
+		t.Fatalf("len(routes) = %d, want 4: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "listUsers", true)
+	assertRoute(t, routes[1], "POST", "/v2/users", "createUser", true)
+	assertRoute(t, routes[2], "GET", "/chained/health", "health", true)
+	assertRoute(t, routes[3], "GET", "/local", "localHandler", true)
+}
+
 func TestAnalyzeDynamicRoutePath(t *testing.T) {
 	tree := analyzer.NewRouteTree()
 	if err := Analyze(context.Background(), "../../../testdata/dynamic_route_path", tree); err != nil {
