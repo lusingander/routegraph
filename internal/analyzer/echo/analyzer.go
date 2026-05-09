@@ -2,8 +2,10 @@ package echo
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"strconv"
 
 	"github.com/lusingander/routegraph/internal/analyzer"
@@ -13,30 +15,39 @@ func Analyze(ctx context.Context, dir string, tree *analyzer.RouteTree) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	fset, files, err := analyzer.LoadGoFiles(dir)
+	pkgs, err := analyzer.LoadGoPackages(dir)
 	if err != nil {
 		return err
 	}
 
-	pkgConsts := collectPackageConsts(files)
-	for _, file := range files {
-		fileConsts := cloneConsts(pkgConsts)
-		collectFileConsts(file.File, fileConsts)
-		for _, decl := range file.File.Decls {
+	for _, pkg := range pkgs {
+		if len(pkg.Pkg.Errors) > 0 {
+			return fmt.Errorf("%s", pkg.Pkg.Errors[0])
+		}
+		pkgConsts := collectPackageConsts(pkg.Pkg.Syntax)
+		for _, file := range pkg.Pkg.Syntax {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
-			}
-			analyzeFunc(fset, tree, fn, fileConsts)
+			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, file, pkgConsts)
 		}
 	}
 	return nil
 }
 
-func analyzeFunc(fset *token.FileSet, tree *analyzer.RouteTree, fn *ast.FuncDecl, fileConsts map[string]string) {
+func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, file *ast.File, pkgConsts map[string]string) {
+	fileConsts := cloneConsts(pkgConsts)
+	collectFileConsts(file, fileConsts)
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		analyzeFunc(fset, typeInfo, tree, fn, fileConsts)
+	}
+}
+
+func analyzeFunc(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fn *ast.FuncDecl, fileConsts map[string]string) {
 	groups := map[string]analyzer.NodeID{}
 	consts := cloneConsts(fileConsts)
 	collectBlockConsts(fn.Body, consts)
@@ -44,14 +55,14 @@ func analyzeFunc(fset *token.FileSet, tree *analyzer.RouteTree, fn *ast.FuncDecl
 	for _, stmt := range fn.Body.List {
 		switch stmt := stmt.(type) {
 		case *ast.AssignStmt:
-			analyzeAssign(fset, tree, groups, consts, stmt)
+			analyzeAssign(fset, typeInfo, tree, groups, consts, stmt)
 		case *ast.ExprStmt:
-			analyzeExpr(fset, tree, groups, consts, stmt.X)
+			analyzeExpr(fset, typeInfo, tree, groups, consts, stmt.X)
 		}
 	}
 }
 
-func analyzeAssign(fset *token.FileSet, tree *analyzer.RouteTree, groups map[string]analyzer.NodeID, consts map[string]string, stmt *ast.AssignStmt) {
+func analyzeAssign(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, groups map[string]analyzer.NodeID, consts map[string]string, stmt *ast.AssignStmt) {
 	for i, rhs := range stmt.Rhs {
 		call, ok := rhs.(*ast.CallExpr)
 		if !ok {
@@ -66,13 +77,16 @@ func analyzeAssign(fset *token.FileSet, tree *analyzer.RouteTree, groups map[str
 			continue
 		}
 
-		parentID := receiverNodeID(groups, selector.X)
+		parentID, ok := receiverNodeID(typeInfo, groups, selector.X)
+		if !ok {
+			continue
+		}
 		path := pathExpr(call.Args[0], consts)
 		groups[lhs.Name] = tree.AddGroup(parentID, analyzer.FrameworkEcho, path, position(fset, call.Lparen))
 	}
 }
 
-func analyzeExpr(fset *token.FileSet, tree *analyzer.RouteTree, groups map[string]analyzer.NodeID, consts map[string]string, expr ast.Expr) {
+func analyzeExpr(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, groups map[string]analyzer.NodeID, consts map[string]string, expr ast.Expr) {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return
@@ -86,7 +100,10 @@ func analyzeExpr(fset *token.FileSet, tree *analyzer.RouteTree, groups map[strin
 		return
 	}
 
-	parentID := receiverNodeID(groups, selector.X)
+	parentID, ok := receiverNodeID(typeInfo, groups, selector.X)
+	if !ok {
+		return
+	}
 	path := pathExpr(call.Args[pathArgIndex], consts)
 	handler := handlerName(call.Args[pathArgIndex+1])
 	tree.AddRoute(parentID, analyzer.FrameworkEcho, method, path, handler, position(fset, call.Lparen))
@@ -113,15 +130,43 @@ func routeMethod(name string, args []ast.Expr, consts map[string]string) (method
 	}
 }
 
-func receiverNodeID(groups map[string]analyzer.NodeID, expr ast.Expr) analyzer.NodeID {
+func receiverNodeID(typeInfo *types.Info, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
+	if !isEchoReceiver(typeInfo, expr) {
+		return 0, false
+	}
 	ident, ok := expr.(*ast.Ident)
 	if !ok {
-		return 0
+		return 0, true
 	}
 	if id, ok := groups[ident.Name]; ok {
-		return id
+		return id, true
 	}
-	return 0
+	return 0, true
+}
+
+func isEchoReceiver(typeInfo *types.Info, expr ast.Expr) bool {
+	if typeInfo == nil {
+		return false
+	}
+	t := typeInfo.TypeOf(expr)
+	if t == nil {
+		return false
+	}
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	named, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	if obj == nil || obj.Pkg() == nil {
+		return false
+	}
+	if obj.Pkg().Path() != "github.com/labstack/echo/v4" {
+		return false
+	}
+	return obj.Name() == "Echo" || obj.Name() == "Group"
 }
 
 func pathExpr(expr ast.Expr, consts map[string]string) analyzer.PathExpr {
@@ -165,10 +210,10 @@ func stringValue(expr ast.Expr, consts map[string]string) (string, bool) {
 	}
 }
 
-func collectPackageConsts(files []analyzer.GoFile) map[string]string {
+func collectPackageConsts(files []*ast.File) map[string]string {
 	consts := map[string]string{}
 	for _, file := range files {
-		collectFileConsts(file.File, consts)
+		collectFileConsts(file, consts)
 	}
 	return consts
 }

@@ -7,11 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
 
 type GoFile struct {
 	Path string
 	File *ast.File
+}
+
+type GoPackage struct {
+	Fset *token.FileSet
+	Pkg  *packages.Package
 }
 
 func LoadGoFiles(dir string) (*token.FileSet, []GoFile, error) {
@@ -61,4 +68,37 @@ func normalizeDirPattern(dir string) string {
 		return base
 	}
 	return dir
+}
+
+func LoadGoPackages(dir string) ([]GoPackage, error) {
+	if dir == "" {
+		dir = "."
+	}
+	recursive := strings.HasSuffix(dir, "/...") || dir == "..."
+	base := normalizeDirPattern(dir)
+	pattern := "."
+	if recursive {
+		pattern = "./..."
+	}
+
+	fset := token.NewFileSet()
+	cfg := &packages.Config{
+		Mode: packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedSyntax |
+			packages.NeedTypes |
+			packages.NeedTypesInfo |
+			packages.NeedImports,
+		Dir:  base,
+		Fset: fset,
+	}
+	pkgs, err := packages.Load(cfg, pattern)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]GoPackage, 0, len(pkgs))
+	for _, pkg := range pkgs {
+		result = append(result, GoPackage{Fset: fset, Pkg: pkg})
+	}
+	return result, nil
 }
