@@ -62,14 +62,6 @@ func (e env) setGroup(name string, id analyzer.NodeID) {
 	e.values[name] = groupValueOf(id)
 }
 
-func (e env) group(name string) (analyzer.NodeID, bool) {
-	value, ok := e.values[name]
-	if !ok || value.Kind != valueGroup {
-		return 0, false
-	}
-	return value.Group, true
-}
-
 func (e env) groupValue(expr ast.Expr) (analyzer.NodeID, bool) {
 	value := evalValue(e, expr)
 	if value.Kind != valueGroup {

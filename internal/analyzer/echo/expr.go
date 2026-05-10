@@ -7,10 +7,6 @@ import (
 	"github.com/lusingander/routegraph/internal/analyzer"
 )
 
-func pathExpr(expr ast.Expr, consts map[string]string) analyzer.PathExpr {
-	return pathExprFromEnv(expr, newEnv(consts))
-}
-
 func pathExprFromEnv(expr ast.Expr, env env) analyzer.PathExpr {
 	value := evalValue(env, expr)
 	if value.Kind == valueString {
