@@ -227,7 +227,6 @@ func analyzeDeclFuncCalls(ctx *analysisContext, stmt *ast.DeclStmt) {
 			analyzeFuncCall(ctx, value)
 			if i < len(valueSpec.Names) {
 				bindRouteValueCallResult(ctx, valueSpec.Names[i].Name, value)
-				bindStructResult(ctx, valueSpec.Names[i].Name, value)
 			}
 		}
 	}
@@ -244,7 +243,6 @@ func analyzeAssignFuncCalls(ctx *analysisContext, stmt *ast.AssignStmt) {
 			continue
 		}
 		bindRouteValueCallResult(ctx, lhs.Name, rhs)
-		bindStructResult(ctx, lhs.Name, rhs)
 	}
 }
 
@@ -363,12 +361,6 @@ func analyzeFuncLiteral(ctx *analysisContext, lit *ast.FuncLit, initialGroups ma
 	collectBlockConsts(lit.Body, litCtx.consts)
 	litCtx.env = litCtx.env.withConsts(litCtx.consts)
 	analyzeBlock(litCtx, lit.Body)
-}
-
-func bindStructResult(ctx *analysisContext, name string, expr ast.Expr) {
-	if structFields, ok := structResultFields(ctx, expr, ctx.groups, ctx.fields, ctx.consts); ok {
-		ctx.fields[name] = structFields
-	}
 }
 
 func callBindings(ctx *analysisContext, callee funcInfo, call *ast.CallExpr) (map[string]analyzer.NodeID, localFieldGroups, bool) {
@@ -539,106 +531,6 @@ func bindDeclRouteValueResults(ctx *analysisContext, stmt *ast.DeclStmt) {
 				continue
 			}
 			bindRouteValueResult(ctx, valueSpec.Names[i].Name, value)
-		}
-	}
-}
-
-func returnedStructFields(ctx *analysisContext, fn funcInfo, groups map[string]analyzer.NodeID, fields localFieldGroups) (map[string]analyzer.NodeID, bool) {
-	if ctx.visiting[fn.decl] {
-		return nil, false
-	}
-	fnCtx := *ctx
-	fnCtx.typeInfo = fn.typeInfo
-	fnCtx.fileConsts = fn.fileConsts
-	localGroups := cloneGroups(groups)
-	localFields := cloneLocalFieldGroups(fields)
-	localConsts := cloneConsts(fn.fileConsts)
-	collectBlockConsts(fn.decl.Body, localConsts)
-	for _, stmt := range fn.decl.Body.List {
-		ret, ok := stmt.(*ast.ReturnStmt)
-		if ok {
-			for _, result := range ret.Results {
-				if structFields, ok := structResultFields(&fnCtx, result, localGroups, localFields, localConsts); ok {
-					return structFields, true
-				}
-			}
-			continue
-		}
-		analyzeReturnPreludeStmt(&fnCtx, localGroups, localFields, localConsts, stmt)
-	}
-	return nil, false
-}
-
-func structResultFields(ctx *analysisContext, expr ast.Expr, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string) (map[string]analyzer.NodeID, bool) {
-	if structFields, _, ok := structLiteralFieldGroups(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, expr); ok {
-		return structFields, true
-	}
-	if ident, ok := expr.(*ast.Ident); ok {
-		structFields := fields[ident.Name]
-		if len(structFields) > 0 {
-			return cloneFieldGroup(structFields), true
-		}
-		return nil, false
-	}
-
-	call, ok := expr.(*ast.CallExpr)
-	if !ok {
-		return nil, false
-	}
-	callee := ctx.calleeInfo(call)
-	if callee.decl == nil {
-		return nil, false
-	}
-	initialGroups, initialFields, ok := callBindingsWithEnv(ctx, callee, call, groups, fields, consts)
-	if !ok {
-		return nil, false
-	}
-	if recvName, recvFields, ok := receiverFieldBindingWithEnv(ctx, callee.decl, call, groups, fields, consts); ok {
-		initialFields[recvName] = recvFields
-	}
-	return returnedStructFields(ctx, callee, initialGroups, initialFields)
-}
-
-func analyzeReturnPreludeStmt(ctx *analysisContext, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, stmt ast.Stmt) {
-	analyzeStructFields(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, consts, stmt)
-	switch stmt := stmt.(type) {
-	case *ast.DeclStmt:
-		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, ctx.env.withConsts(consts), stmt)
-		bindDeclStructResults(ctx, groups, fields, consts, stmt)
-	case *ast.AssignStmt:
-		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, ctx.env.withConsts(consts), stmt)
-		for i, rhs := range stmt.Rhs {
-			if i >= len(stmt.Lhs) {
-				continue
-			}
-			lhs, ok := stmt.Lhs[i].(*ast.Ident)
-			if !ok {
-				continue
-			}
-			if structFields, ok := structResultFields(ctx, rhs, groups, fields, consts); ok {
-				fields[lhs.Name] = structFields
-			}
-		}
-	}
-}
-
-func bindDeclStructResults(ctx *analysisContext, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, stmt *ast.DeclStmt) {
-	genDecl, ok := stmt.Decl.(*ast.GenDecl)
-	if !ok || genDecl.Tok != token.VAR {
-		return
-	}
-	for _, spec := range genDecl.Specs {
-		valueSpec, ok := spec.(*ast.ValueSpec)
-		if !ok {
-			continue
-		}
-		for i, value := range valueSpec.Values {
-			if i >= len(valueSpec.Names) {
-				continue
-			}
-			if structFields, ok := structResultFields(ctx, value, groups, fields, consts); ok {
-				fields[valueSpec.Names[i].Name] = structFields
-			}
 		}
 	}
 }
