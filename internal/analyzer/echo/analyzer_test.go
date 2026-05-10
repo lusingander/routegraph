@@ -405,6 +405,62 @@ func TestAnalyzeEnvInstanceIsolation(t *testing.T) {
 	assertRoute(t, routes[1], "GET", "/admin/stats", "stats", true)
 }
 
+func TestAnalyzeEnvStructArgConstructor(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/env_struct_arg_constructor", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 1 {
+		t.Fatalf("len(routes) = %d, want 1: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
+}
+
+func TestAnalyzeEnvReceiverReturn(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/env_receiver_return", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 1 {
+		t.Fatalf("len(routes) = %d, want 1: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
+}
+
+func TestAnalyzeEnvStructRouteTable(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/env_struct_route_table", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 3 {
+		t.Fatalf("len(routes) = %d, want 3: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
+	assertRoute(t, routes[1], "POST", "/api/users", "users", true)
+	assertRoute(t, routes[2], "DELETE", "/api/users/:id", "deleteUser", true)
+}
+
+func TestAnalyzeEnvUnknownReturn(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/env_unknown_return", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 0 {
+		t.Fatalf("len(routes) = %d, want 0: %#v", len(routes), routes)
+	}
+}
+
 func TestAnalyzeRouteTable(t *testing.T) {
 	tree := analyzer.NewRouteTree()
 	if err := Analyze(context.Background(), "../../../testdata/route_table", tree); err != nil {
