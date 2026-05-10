@@ -678,23 +678,6 @@ func receiverFieldBindingWithEnv(ctx *analysisContext, callee *ast.FuncDecl, cal
 			return "", nil, false
 		}
 		return recvName, cloneFieldGroup(instanceFields), true
-	case *ast.CallExpr:
-		receiverCallee := ctx.calleeInfo(receiver)
-		if receiverCallee.decl == nil {
-			return "", nil, false
-		}
-		initialGroups, initialFields, ok := callBindingsWithEnv(ctx, receiverCallee, receiver, groups, fields, consts)
-		if !ok {
-			return "", nil, false
-		}
-		if nestedRecvName, nestedRecvFields, ok := receiverFieldBindingWithEnv(ctx, receiverCallee.decl, receiver, groups, fields, consts); ok {
-			initialFields[nestedRecvName] = nestedRecvFields
-		}
-		returnedFields, ok := returnedStructFields(ctx, receiverCallee, initialGroups, initialFields)
-		if !ok {
-			return "", nil, false
-		}
-		return recvName, returnedFields, true
 	default:
 		return "", nil, false
 	}
