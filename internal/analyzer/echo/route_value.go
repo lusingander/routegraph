@@ -130,7 +130,77 @@ func analyzeReturnValuePreludeStmt(ctx *analysisContext, stmt ast.Stmt) {
 			}
 			bindRouteValueResult(ctx, lhs.Name, rhs)
 		}
+	case *ast.ExprStmt:
+		applyReceiverFieldAssignments(ctx, stmt.X)
 	}
+}
+
+func applyReceiverFieldAssignments(ctx *analysisContext, expr ast.Expr) {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return
+	}
+	receiverIdent, ok := selector.X.(*ast.Ident)
+	if !ok {
+		return
+	}
+	callee := ctx.calleeInfo(call)
+	if callee.decl == nil || callee.decl.Recv == nil || len(callee.decl.Recv.List) == 0 || len(callee.decl.Recv.List[0].Names) == 0 {
+		return
+	}
+	receiverName := callee.decl.Recv.List[0].Names[0].Name
+	receiverValue := evalRouteValueInContext(ctx, receiverIdent, ctx.groups, ctx.env)
+	if receiverValue.Kind != valueStruct {
+		return
+	}
+	initialValues, ok := callValueBindingsWithEnv(ctx, callee, call, ctx.groups, ctx.env)
+	if !ok {
+		return
+	}
+	fnCtx := *ctx
+	fnCtx.typeInfo = callee.typeInfo
+	fnCtx.fileConsts = callee.fileConsts
+	fnCtx.groups = map[string]analyzer.NodeID{}
+	fnCtx.routeTables = cloneRouteTables(ctx.routeTables)
+	fnCtx.consts = cloneConsts(callee.fileConsts)
+	collectBlockConsts(callee.decl.Body, fnCtx.consts)
+	fnCtx.env = newEnv(fnCtx.consts)
+	fnCtx.env.values[receiverName] = receiverValue
+	for name, value := range initialValues {
+		fnCtx.env.values[name] = cloneValue(value)
+		if value.Kind == valueGroup {
+			fnCtx.groups[name] = value.Group
+		}
+	}
+	for _, stmt := range callee.decl.Body.List {
+		assign, ok := stmt.(*ast.AssignStmt)
+		if !ok {
+			continue
+		}
+		for i, rhs := range assign.Rhs {
+			if i >= len(assign.Lhs) {
+				continue
+			}
+			lhs, ok := assign.Lhs[i].(*ast.SelectorExpr)
+			if !ok {
+				continue
+			}
+			lhsReceiver, ok := lhs.X.(*ast.Ident)
+			if !ok || lhsReceiver.Name != receiverName {
+				continue
+			}
+			bindRouteFieldValue(&fnCtx, lhs, rhs)
+		}
+	}
+	updated := fnCtx.env.values[receiverName]
+	if updated.Kind != valueStruct {
+		return
+	}
+	ctx.env.values[receiverIdent.Name] = updated
 }
 
 func bindDeclRouteValueResults(ctx *analysisContext, stmt *ast.DeclStmt) {

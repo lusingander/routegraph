@@ -449,6 +449,20 @@ func TestAnalyzeEnvRoutesAssignment(t *testing.T) {
 	assertRoute(t, routes[2], "DELETE", "/api/users/:id", "deleteUser", true)
 }
 
+func TestAnalyzeEnvReceiverFieldInit(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/env_receiver_field_init", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 1 {
+		t.Fatalf("len(routes) = %d, want 1: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
+}
+
 func TestAnalyzeEnvStructArgConstructor(t *testing.T) {
 	tree := analyzer.NewRouteTree()
 	if err := Analyze(context.Background(), "../../../testdata/env_struct_arg_constructor", tree); err != nil {

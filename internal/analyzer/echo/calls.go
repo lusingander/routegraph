@@ -162,6 +162,7 @@ func analyzeStmt(ctx *analysisContext, stmt ast.Stmt) {
 	case *ast.ExprStmt:
 		analyzeExpr(ctx.fset, ctx.typeInfo, ctx.tree, ctx.groups, ctx.env, stmt.X)
 		analyzeFuncCall(ctx, stmt.X)
+		applyReceiverFieldAssignments(ctx, stmt.X)
 	case *ast.IfStmt:
 		if stmt.Init != nil {
 			analyzeStmt(ctx, stmt.Init)
