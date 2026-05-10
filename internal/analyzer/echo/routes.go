@@ -94,7 +94,28 @@ func evalRouteValue(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Ro
 	if len(structFields) > 0 {
 		return structValueOf(structFields)
 	}
+	if isStructCompositeLit(typeInfo, lit) {
+		return structValueOf(structFields)
+	}
 	return evalValue(env, expr)
+}
+
+func isStructCompositeLit(typeInfo *types.Info, lit *ast.CompositeLit) bool {
+	if typeInfo == nil {
+		return false
+	}
+	t := typeInfo.TypeOf(lit)
+	if t == nil {
+		return false
+	}
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	if named, ok := t.(*types.Named); ok {
+		t = named.Underlying()
+	}
+	_, ok := t.(*types.Struct)
+	return ok
 }
 
 func analyzeExpr(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, groups map[string]analyzer.NodeID, env env, expr ast.Expr) {

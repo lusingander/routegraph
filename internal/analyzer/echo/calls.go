@@ -221,12 +221,48 @@ func analyzeAssignFuncCalls(ctx *analysisContext, stmt *ast.AssignStmt) {
 		if i >= len(stmt.Lhs) {
 			continue
 		}
-		lhs, ok := stmt.Lhs[i].(*ast.Ident)
-		if !ok {
-			continue
+		switch lhs := stmt.Lhs[i].(type) {
+		case *ast.Ident:
+			bindRouteValueCallResult(ctx, lhs.Name, rhs)
+		case *ast.SelectorExpr:
+			bindRouteFieldValue(ctx, lhs, rhs)
 		}
-		bindRouteValueCallResult(ctx, lhs.Name, rhs)
 	}
+}
+
+func bindRouteFieldValue(ctx *analysisContext, lhs *ast.SelectorExpr, rhs ast.Expr) {
+	receiver, ok := lhs.X.(*ast.Ident)
+	if !ok {
+		return
+	}
+	receiverValue, ok := ctx.env.values[receiver.Name]
+	if !ok || receiverValue.Kind != valueStruct {
+		return
+	}
+	fieldValue := evalRouteValueInContext(ctx, rhs, ctx.groups, ctx.env)
+	switch fieldValue.Kind {
+	case valueString, valueStrings, valueGroup, valueRoutes, valueStruct:
+	default:
+		return
+	}
+	if receiverValue.Fields == nil {
+		receiverValue.Fields = map[string]value{}
+	}
+	receiverValue.Fields[lhs.Sel.Name] = fieldValue
+	ctx.env.values[receiver.Name] = receiverValue
+	if fieldValue.Kind == valueGroup {
+		if selectorName, ok := selectorName(lhs); ok {
+			ctx.groups[selectorName] = fieldValue.Group
+		}
+	}
+}
+
+func selectorName(expr *ast.SelectorExpr) (string, bool) {
+	receiver, ok := expr.X.(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	return receiver.Name + "." + expr.Sel.Name, true
 }
 
 func bindRouteValueCallResult(ctx *analysisContext, name string, expr ast.Expr) {
