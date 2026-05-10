@@ -291,9 +291,6 @@ func analyzeFuncCall(ctx *analysisContext, expr ast.Expr) {
 	if recvName, recvValue, ok := receiverValueBinding(ctx, callee.decl, call); ok {
 		initialValues[recvName] = recvValue
 	}
-	if recvName, recvFields, ok := receiverFieldBinding(ctx, callee.decl, call); ok {
-		initialFields[recvName] = recvFields
-	}
 	if len(initialGroups) == 0 && len(initialFields) == 0 && len(initialValues) == 0 {
 		return
 	}
@@ -535,10 +532,6 @@ func bindDeclRouteValueResults(ctx *analysisContext, stmt *ast.DeclStmt) {
 	}
 }
 
-func receiverFieldBinding(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr) (string, map[string]analyzer.NodeID, bool) {
-	return receiverFieldBindingWithEnv(ctx, callee, call, ctx.groups, ctx.fields, ctx.consts)
-}
-
 func receiverValueBinding(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr) (string, value, bool) {
 	if callee.Recv == nil || len(callee.Recv.List) == 0 || len(callee.Recv.List[0].Names) == 0 {
 		return "", value{}, false
@@ -552,27 +545,6 @@ func receiverValueBinding(ctx *analysisContext, callee *ast.FuncDecl, call *ast.
 		return "", value{}, false
 	}
 	return callee.Recv.List[0].Names[0].Name, receiver, true
-}
-
-func receiverFieldBindingWithEnv(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string) (string, map[string]analyzer.NodeID, bool) {
-	if callee.Recv == nil || len(callee.Recv.List) == 0 || len(callee.Recv.List[0].Names) == 0 {
-		return "", nil, false
-	}
-	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return "", nil, false
-	}
-	recvName := callee.Recv.List[0].Names[0].Name
-	switch receiver := selector.X.(type) {
-	case *ast.Ident:
-		instanceFields := fields[receiver.Name]
-		if len(instanceFields) == 0 {
-			return "", nil, false
-		}
-		return recvName, cloneFieldGroup(instanceFields), true
-	default:
-		return "", nil, false
-	}
 }
 
 func calleeFunc(typeInfo *types.Info, call *ast.CallExpr) *types.Func {
