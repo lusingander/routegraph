@@ -390,6 +390,21 @@ func TestAnalyzeEnvReturnValue(t *testing.T) {
 	assertRoute(t, routes[1], "GET", "/admin/stats", "stats", true)
 }
 
+func TestAnalyzeEnvInstanceIsolation(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/env_instance_isolation", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 2 {
+		t.Fatalf("len(routes) = %d, want 2: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/users", "users", true)
+	assertRoute(t, routes[1], "GET", "/admin/stats", "stats", true)
+}
+
 func TestAnalyzeRouteTable(t *testing.T) {
 	tree := analyzer.NewRouteTree()
 	if err := Analyze(context.Background(), "../../../testdata/route_table", tree); err != nil {
