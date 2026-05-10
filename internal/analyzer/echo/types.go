@@ -7,15 +7,10 @@ import (
 	"github.com/lusingander/routegraph/internal/analyzer"
 )
 
-func argumentNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
+func argumentNodeID(typeInfo *types.Info, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
 	kind := echoTypeKind(typeInfo, expr)
 	if kind == "" {
 		return 0, false
-	}
-	if fieldSelector, ok := expr.(*ast.SelectorExpr); ok {
-		if id, ok := fieldNodeID(typeInfo, fieldGroups, fieldSelector); ok {
-			return id, true
-		}
 	}
 	ident, ok := expr.(*ast.Ident)
 	if !ok {
@@ -27,8 +22,8 @@ func argumentNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID
 	return 0, kind == "Echo"
 }
 
-func receiverNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
-	return argumentNodeID(typeInfo, fieldGroups, groups, expr)
+func receiverNodeID(typeInfo *types.Info, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
+	return argumentNodeID(typeInfo, groups, expr)
 }
 
 func isEchoParam(typeInfo *types.Info, ident *ast.Ident) bool {
@@ -69,33 +64,6 @@ func echoTypeName(t types.Type) string {
 		return ""
 	}
 	if obj.Name() != "Echo" && obj.Name() != "Group" {
-		return ""
-	}
-	return obj.Name()
-}
-
-func fieldNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, selector *ast.SelectorExpr) (analyzer.NodeID, bool) {
-	structName := structTypeName(typeInfo.TypeOf(selector.X))
-	if structName == "" {
-		return 0, false
-	}
-	id, ok := fieldGroups[structName+"."+selector.Sel.Name]
-	return id, ok
-}
-
-func structTypeName(t types.Type) string {
-	if t == nil {
-		return ""
-	}
-	if ptr, ok := t.(*types.Pointer); ok {
-		t = ptr.Elem()
-	}
-	named, ok := t.(*types.Named)
-	if !ok {
-		return ""
-	}
-	obj := named.Obj()
-	if obj == nil {
 		return ""
 	}
 	return obj.Name()

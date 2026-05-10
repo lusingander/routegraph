@@ -42,20 +42,19 @@ func (Analyzer) Analyze(ctx context.Context, pkgs []analyzer.GoPackage, tree *an
 			funcNames[funcKey(fn)] = info
 		}
 	}
-	fieldGroups := map[string]analyzer.NodeID{}
 	analyzed := map[string]bool{}
 	for i, pkg := range pkgs {
 		for _, file := range pkg.Pkg.Syntax {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, funcs, funcNames, fieldGroups, analyzed, file, pkgConsts[i], pkgRouteTables[i])
+			analyzeFile(pkg.Fset, pkg.Pkg.TypesInfo, tree, funcs, funcNames, analyzed, file, pkgConsts[i], pkgRouteTables[i])
 		}
 	}
 	return nil
 }
 
-func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]funcInfo, funcNames map[string]funcInfo, fieldGroups map[string]analyzer.NodeID, analyzed map[string]bool, file *ast.File, pkgConsts map[string]string, pkgRouteTables map[string][]routeTableEntry) {
+func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, funcs map[*types.Func]funcInfo, funcNames map[string]funcInfo, analyzed map[string]bool, file *ast.File, pkgConsts map[string]string, pkgRouteTables map[string][]routeTableEntry) {
 	fileConsts := cloneConsts(pkgConsts)
 	collectFileConsts(file, fileConsts)
 	for _, decl := range file.Decls {
@@ -71,7 +70,7 @@ func analyzeFile(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.Route
 		if info.decl == nil {
 			continue
 		}
-		ctx := newAnalysisContext(fset, typeInfo, tree, funcs, funcNames, fieldGroups, fileConsts)
+		ctx := newAnalysisContext(fset, typeInfo, tree, funcs, funcNames, fileConsts)
 		for name, entries := range pkgRouteTables {
 			ctx.routeTables[name] = entries
 			ctx.env.setRoutes(name, entries)

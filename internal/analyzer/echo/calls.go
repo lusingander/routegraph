@@ -151,17 +151,16 @@ func analyzeBlock(ctx *analysisContext, block *ast.BlockStmt) {
 }
 
 func analyzeStmt(ctx *analysisContext, stmt ast.Stmt) {
-	analyzeStructFields(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.consts, stmt)
 	switch stmt := stmt.(type) {
 	case *ast.DeclStmt:
-		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.env, stmt)
+		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.groups, ctx.env, stmt)
 		analyzeDeclFuncCalls(ctx, stmt)
 	case *ast.AssignStmt:
-		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.env, stmt)
+		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.groups, ctx.env, stmt)
 		collectRouteTable(ctx.routeTables, ctx.env, stmt)
 		analyzeAssignFuncCalls(ctx, stmt)
 	case *ast.ExprStmt:
-		analyzeExpr(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.env, stmt.X)
+		analyzeExpr(ctx.fset, ctx.typeInfo, ctx.tree, ctx.groups, ctx.env, stmt.X)
 		analyzeFuncCall(ctx, stmt.X)
 	case *ast.IfStmt:
 		if stmt.Init != nil {
@@ -179,7 +178,7 @@ func analyzeStmt(ctx *analysisContext, stmt ast.Stmt) {
 		}
 	case *ast.RangeStmt:
 		nodeCount := len(ctx.tree.Nodes)
-		analyzeRouteTableRange(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.routeTables, ctx.env, stmt)
+		analyzeRouteTableRange(ctx.fset, ctx.typeInfo, ctx.tree, ctx.groups, ctx.routeTables, ctx.env, stmt)
 		if len(ctx.tree.Nodes) == nodeCount {
 			analyzeBlock(ctx, stmt.Body)
 		}
@@ -306,9 +305,9 @@ func callGroupArgs(ctx *analysisContext, call *ast.CallExpr) []analyzer.NodeID {
 		if _, ok := arg.(*ast.FuncLit); ok {
 			continue
 		}
-		nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, ctx.groups, arg)
+		nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.groups, arg)
 		if !ok {
-			nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.env, arg)
+			nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.groups, ctx.env, arg)
 		}
 		if ok {
 			groupArgs = append(groupArgs, nodeID)
@@ -356,9 +355,9 @@ func callBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.CallEx
 			if argIndex >= len(call.Args) {
 				return nil, false
 			}
-			nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, groups, call.Args[argIndex])
+			nodeID, ok := argumentNodeID(ctx.typeInfo, groups, call.Args[argIndex])
 			if !ok {
-				nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, ctx.env.withConsts(consts), call.Args[argIndex])
+				nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, groups, ctx.env.withConsts(consts), call.Args[argIndex])
 			}
 			if ok && isEchoParam(callee.typeInfo, name) {
 				initialGroups[name.Name] = nodeID
@@ -370,7 +369,7 @@ func callBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.CallEx
 }
 
 func evalRouteValueInContext(ctx *analysisContext, expr ast.Expr, groups map[string]analyzer.NodeID, env env) value {
-	value := evalRouteValue(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, env, expr)
+	value := evalRouteValue(ctx.fset, ctx.typeInfo, ctx.tree, groups, env, expr)
 	if value.Kind != valueUnknown {
 		return value
 	}
@@ -411,7 +410,7 @@ func callValueBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.C
 			arg := call.Args[argIndex]
 			argValue := evalRouteValueInContext(ctx, arg, groups, env)
 			if argValue.Kind == valueUnknown {
-				if nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, groups, arg); ok {
+				if nodeID, ok := argumentNodeID(ctx.typeInfo, groups, arg); ok {
 					argValue = groupValueOf(nodeID)
 				}
 			}
