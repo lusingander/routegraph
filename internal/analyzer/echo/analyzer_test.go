@@ -419,6 +419,36 @@ func TestAnalyzeEnvFieldAssignment(t *testing.T) {
 	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
 }
 
+func TestAnalyzeEnvNestedStructField(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/env_nested_struct_field", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 1 {
+		t.Fatalf("len(routes) = %d, want 1: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
+}
+
+func TestAnalyzeEnvRoutesAssignment(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/env_routes_assignment", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 3 {
+		t.Fatalf("len(routes) = %d, want 3: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
+	assertRoute(t, routes[1], "POST", "/api/users", "users", true)
+	assertRoute(t, routes[2], "DELETE", "/api/users/:id", "deleteUser", true)
+}
+
 func TestAnalyzeEnvStructArgConstructor(t *testing.T) {
 	tree := analyzer.NewRouteTree()
 	if err := Analyze(context.Background(), "../../../testdata/env_struct_arg_constructor", tree); err != nil {
