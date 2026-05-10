@@ -347,6 +347,49 @@ func TestAnalyzeEnvStructMethod(t *testing.T) {
 	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
 }
 
+func TestAnalyzeEnvConstructorMethod(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/env_constructor_method", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 1 {
+		t.Fatalf("len(routes) = %d, want 1: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
+}
+
+func TestAnalyzeEnvChainedConstructor(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/env_chained_constructor", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 1 {
+		t.Fatalf("len(routes) = %d, want 1: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/admin/stats", "stats", true)
+}
+
+func TestAnalyzeEnvReturnValue(t *testing.T) {
+	tree := analyzer.NewRouteTree()
+	if err := Analyze(context.Background(), "../../../testdata/env_return_value", tree); err != nil {
+		t.Fatal(err)
+	}
+
+	routes := analyzer.Flatten(tree)
+	if len(routes) != 2 {
+		t.Fatalf("len(routes) = %d, want 2: %#v", len(routes), routes)
+	}
+
+	assertRoute(t, routes[0], "GET", "/api/users", "users", true)
+	assertRoute(t, routes[1], "GET", "/admin/stats", "stats", true)
+}
+
 func TestAnalyzeRouteTable(t *testing.T) {
 	tree := analyzer.NewRouteTree()
 	if err := Analyze(context.Background(), "../../../testdata/route_table", tree); err != nil {
