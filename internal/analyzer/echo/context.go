@@ -18,7 +18,6 @@ type analysisContext struct {
 	fileConsts  map[string]string
 
 	groups      map[string]analyzer.NodeID
-	fields      localFieldGroups
 	routeTables map[string][]routeTableEntry
 	consts      map[string]string
 	env         env
@@ -42,7 +41,6 @@ func newAnalysisContext(fset *token.FileSet, typeInfo *types.Info, tree *analyze
 		fieldGroups: fieldGroups,
 		fileConsts:  fileConsts,
 		groups:      map[string]analyzer.NodeID{},
-		fields:      localFieldGroups{},
 		routeTables: map[string][]routeTableEntry{},
 		consts:      cloneConsts(fileConsts),
 		env:         newEnv(fileConsts),
@@ -54,7 +52,6 @@ func newAnalysisContext(fset *token.FileSet, typeInfo *types.Info, tree *analyze
 func (ctx *analysisContext) withCallBindings(groups map[string]analyzer.NodeID, values map[string]value) *analysisContext {
 	next := *ctx
 	next.groups = cloneGroups(groups)
-	next.fields = localFieldGroups{}
 	next.routeTables = cloneRouteTables(ctx.routeTables)
 	next.consts = cloneConsts(ctx.fileConsts)
 	next.env = ctx.env.withConsts(ctx.fileConsts)

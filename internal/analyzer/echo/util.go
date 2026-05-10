@@ -22,26 +22,10 @@ func cloneGroups(groups map[string]analyzer.NodeID) map[string]analyzer.NodeID {
 	return cloned
 }
 
-func cloneLocalFieldGroups(fields localFieldGroups) localFieldGroups {
-	cloned := make(localFieldGroups, len(fields))
-	for name, fieldGroup := range fields {
-		cloned[name] = cloneFieldGroup(fieldGroup)
-	}
-	return cloned
-}
-
 func cloneRouteTables(routeTables map[string][]routeTableEntry) map[string][]routeTableEntry {
 	cloned := make(map[string][]routeTableEntry, len(routeTables))
 	for name, entries := range routeTables {
 		cloned[name] = append([]routeTableEntry(nil), entries...)
-	}
-	return cloned
-}
-
-func cloneFieldGroup(fields map[string]analyzer.NodeID) map[string]analyzer.NodeID {
-	cloned := make(map[string]analyzer.NodeID, len(fields))
-	for name, id := range fields {
-		cloned[name] = id
 	}
 	return cloned
 }

@@ -7,15 +7,13 @@ import (
 	"github.com/lusingander/routegraph/internal/analyzer"
 )
 
-type localFieldGroups map[string]map[string]analyzer.NodeID
-
-func argumentNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, expr ast.Expr) (analyzer.NodeID, bool) {
+func argumentNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
 	kind := echoTypeKind(typeInfo, expr)
 	if kind == "" {
 		return 0, false
 	}
 	if fieldSelector, ok := expr.(*ast.SelectorExpr); ok {
-		if id, ok := fieldNodeID(typeInfo, fieldGroups, fields, fieldSelector); ok {
+		if id, ok := fieldNodeID(typeInfo, fieldGroups, fieldSelector); ok {
 			return id, true
 		}
 	}
@@ -29,8 +27,8 @@ func argumentNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID
 	return 0, kind == "Echo"
 }
 
-func receiverNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, expr ast.Expr) (analyzer.NodeID, bool) {
-	return argumentNodeID(typeInfo, fieldGroups, groups, fields, expr)
+func receiverNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, expr ast.Expr) (analyzer.NodeID, bool) {
+	return argumentNodeID(typeInfo, fieldGroups, groups, expr)
 }
 
 func isEchoParam(typeInfo *types.Info, ident *ast.Ident) bool {
@@ -76,14 +74,7 @@ func echoTypeName(t types.Type) string {
 	return obj.Name()
 }
 
-func fieldNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, fields localFieldGroups, selector *ast.SelectorExpr) (analyzer.NodeID, bool) {
-	if ident, ok := selector.X.(*ast.Ident); ok {
-		if instanceFields := fields[ident.Name]; len(instanceFields) > 0 {
-			if id, ok := instanceFields[selector.Sel.Name]; ok {
-				return id, true
-			}
-		}
-	}
+func fieldNodeID(typeInfo *types.Info, fieldGroups map[string]analyzer.NodeID, selector *ast.SelectorExpr) (analyzer.NodeID, bool) {
 	structName := structTypeName(typeInfo.TypeOf(selector.X))
 	if structName == "" {
 		return 0, false

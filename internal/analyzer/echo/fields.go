@@ -8,21 +8,21 @@ import (
 	"github.com/lusingander/routegraph/internal/analyzer"
 )
 
-func analyzeStructFields(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, stmt ast.Stmt) {
+func analyzeStructFields(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, consts map[string]string, stmt ast.Stmt) {
 	switch stmt := stmt.(type) {
 	case *ast.ReturnStmt:
 		for _, result := range stmt.Results {
-			analyzeStructLiteral(fset, typeInfo, tree, fieldGroups, groups, fields, consts, result)
+			analyzeStructLiteral(fset, typeInfo, tree, fieldGroups, groups, consts, result)
 		}
 	case *ast.AssignStmt:
 		for _, rhs := range stmt.Rhs {
-			analyzeStructLiteral(fset, typeInfo, tree, fieldGroups, groups, fields, consts, rhs)
+			analyzeStructLiteral(fset, typeInfo, tree, fieldGroups, groups, consts, rhs)
 		}
 	}
 }
 
-func analyzeStructLiteral(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, expr ast.Expr) {
-	structFields, structName, ok := structLiteralFieldGroups(fset, typeInfo, tree, fieldGroups, groups, fields, consts, expr)
+func analyzeStructLiteral(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, consts map[string]string, expr ast.Expr) {
+	structFields, structName, ok := structLiteralFieldGroups(fset, typeInfo, tree, fieldGroups, groups, consts, expr)
 	if !ok {
 		return
 	}
@@ -31,7 +31,7 @@ func analyzeStructLiteral(fset *token.FileSet, typeInfo *types.Info, tree *analy
 	}
 }
 
-func structLiteralFieldGroups(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string, expr ast.Expr) (map[string]analyzer.NodeID, string, bool) {
+func structLiteralFieldGroups(fset *token.FileSet, typeInfo *types.Info, tree *analyzer.RouteTree, fieldGroups map[string]analyzer.NodeID, groups map[string]analyzer.NodeID, consts map[string]string, expr ast.Expr) (map[string]analyzer.NodeID, string, bool) {
 	if unary, ok := expr.(*ast.UnaryExpr); ok && unary.Op == token.AND {
 		expr = unary.X
 	}
@@ -54,11 +54,11 @@ func structLiteralFieldGroups(fset *token.FileSet, typeInfo *types.Info, tree *a
 		if !ok {
 			continue
 		}
-		if id, ok := argumentNodeID(typeInfo, fieldGroups, groups, fields, kv.Value); ok {
+		if id, ok := argumentNodeID(typeInfo, fieldGroups, groups, kv.Value); ok {
 			result[field.Name] = id
 			continue
 		}
-		if id, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, fields, newEnv(consts), kv.Value); ok {
+		if id, ok := groupCallNodeID(fset, typeInfo, tree, fieldGroups, groups, newEnv(consts), kv.Value); ok {
 			result[field.Name] = id
 		}
 	}

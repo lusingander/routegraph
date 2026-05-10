@@ -151,17 +151,17 @@ func analyzeBlock(ctx *analysisContext, block *ast.BlockStmt) {
 }
 
 func analyzeStmt(ctx *analysisContext, stmt ast.Stmt) {
-	analyzeStructFields(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.consts, stmt)
+	analyzeStructFields(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.consts, stmt)
 	switch stmt := stmt.(type) {
 	case *ast.DeclStmt:
-		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.env, stmt)
+		analyzeDecl(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.env, stmt)
 		analyzeDeclFuncCalls(ctx, stmt)
 	case *ast.AssignStmt:
-		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.env, stmt)
+		analyzeAssign(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.env, stmt)
 		collectRouteTable(ctx.routeTables, ctx.env, stmt)
 		analyzeAssignFuncCalls(ctx, stmt)
 	case *ast.ExprStmt:
-		analyzeExpr(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.env, stmt.X)
+		analyzeExpr(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.env, stmt.X)
 		analyzeFuncCall(ctx, stmt.X)
 	case *ast.IfStmt:
 		if stmt.Init != nil {
@@ -179,7 +179,7 @@ func analyzeStmt(ctx *analysisContext, stmt ast.Stmt) {
 		}
 	case *ast.RangeStmt:
 		nodeCount := len(ctx.tree.Nodes)
-		analyzeRouteTableRange(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.routeTables, ctx.env, stmt)
+		analyzeRouteTableRange(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.routeTables, ctx.env, stmt)
 		if len(ctx.tree.Nodes) == nodeCount {
 			analyzeBlock(ctx, stmt.Body)
 		}
@@ -239,7 +239,7 @@ func bindRouteValueCallResult(ctx *analysisContext, name string, expr ast.Expr) 
 }
 
 func bindRouteValueResult(ctx *analysisContext, name string, expr ast.Expr) {
-	value := evalRouteValueInContext(ctx, expr, ctx.groups, ctx.fields, ctx.env)
+	value := evalRouteValueInContext(ctx, expr, ctx.groups, ctx.env)
 	switch value.Kind {
 	case valueString, valueStrings, valueGroup, valueRoutes, valueStruct:
 		ctx.env.values[name] = value
@@ -306,9 +306,9 @@ func callGroupArgs(ctx *analysisContext, call *ast.CallExpr) []analyzer.NodeID {
 		if _, ok := arg.(*ast.FuncLit); ok {
 			continue
 		}
-		nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, ctx.groups, ctx.fields, arg)
+		nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, ctx.groups, arg)
 		if !ok {
-			nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.fields, ctx.env, arg)
+			nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, ctx.groups, ctx.env, arg)
 		}
 		if ok {
 			groupArgs = append(groupArgs, nodeID)
@@ -345,10 +345,10 @@ func analyzeFuncLiteral(ctx *analysisContext, lit *ast.FuncLit, initialGroups ma
 }
 
 func callBindings(ctx *analysisContext, callee funcInfo, call *ast.CallExpr) (map[string]analyzer.NodeID, bool) {
-	return callBindingsWithEnv(ctx, callee, call, ctx.groups, ctx.fields, ctx.consts)
+	return callBindingsWithEnv(ctx, callee, call, ctx.groups, ctx.consts)
 }
 
-func callBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.CallExpr, groups map[string]analyzer.NodeID, fields localFieldGroups, consts map[string]string) (map[string]analyzer.NodeID, bool) {
+func callBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.CallExpr, groups map[string]analyzer.NodeID, consts map[string]string) (map[string]analyzer.NodeID, bool) {
 	initialGroups := map[string]analyzer.NodeID{}
 	argIndex := 0
 	for _, field := range callee.decl.Type.Params.List {
@@ -356,9 +356,9 @@ func callBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.CallEx
 			if argIndex >= len(call.Args) {
 				return nil, false
 			}
-			nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, groups, fields, call.Args[argIndex])
+			nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, groups, call.Args[argIndex])
 			if !ok {
-				nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, ctx.env.withConsts(consts), call.Args[argIndex])
+				nodeID, ok = groupCallNodeID(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, ctx.env.withConsts(consts), call.Args[argIndex])
 			}
 			if ok && isEchoParam(callee.typeInfo, name) {
 				initialGroups[name.Name] = nodeID
@@ -369,8 +369,8 @@ func callBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.CallEx
 	return initialGroups, true
 }
 
-func evalRouteValueInContext(ctx *analysisContext, expr ast.Expr, groups map[string]analyzer.NodeID, fields localFieldGroups, env env) value {
-	value := evalRouteValue(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, fields, env, expr)
+func evalRouteValueInContext(ctx *analysisContext, expr ast.Expr, groups map[string]analyzer.NodeID, env env) value {
+	value := evalRouteValue(ctx.fset, ctx.typeInfo, ctx.tree, ctx.fieldGroups, groups, env, expr)
 	if value.Kind != valueUnknown {
 		return value
 	}
@@ -378,19 +378,19 @@ func evalRouteValueInContext(ctx *analysisContext, expr ast.Expr, groups map[str
 	if !ok {
 		return value
 	}
-	return callReturnValue(ctx, call, groups, fields, env)
+	return callReturnValue(ctx, call, groups, env)
 }
 
-func callReturnValue(ctx *analysisContext, call *ast.CallExpr, groups map[string]analyzer.NodeID, fields localFieldGroups, env env) value {
+func callReturnValue(ctx *analysisContext, call *ast.CallExpr, groups map[string]analyzer.NodeID, env env) value {
 	callee := ctx.calleeInfo(call)
 	if callee.decl == nil || callee.decl.Type.Params == nil {
 		return unknownValue()
 	}
-	initialValues, ok := callValueBindingsWithEnv(ctx, callee, call, groups, fields, env)
+	initialValues, ok := callValueBindingsWithEnv(ctx, callee, call, groups, env)
 	if !ok {
 		return unknownValue()
 	}
-	if recvName, recvValue, ok := receiverValueBindingWithEnv(ctx, callee.decl, call, groups, fields, env); ok {
+	if recvName, recvValue, ok := receiverValueBindingWithEnv(ctx, callee.decl, call, groups, env); ok {
 		initialValues[recvName] = recvValue
 	}
 	value, ok := returnedValue(ctx, callee, initialValues)
@@ -400,7 +400,7 @@ func callReturnValue(ctx *analysisContext, call *ast.CallExpr, groups map[string
 	return value
 }
 
-func callValueBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.CallExpr, groups map[string]analyzer.NodeID, fields localFieldGroups, env env) (map[string]value, bool) {
+func callValueBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.CallExpr, groups map[string]analyzer.NodeID, env env) (map[string]value, bool) {
 	initialValues := map[string]value{}
 	argIndex := 0
 	for _, field := range callee.decl.Type.Params.List {
@@ -409,9 +409,9 @@ func callValueBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.C
 				return nil, false
 			}
 			arg := call.Args[argIndex]
-			argValue := evalRouteValueInContext(ctx, arg, groups, fields, env)
+			argValue := evalRouteValueInContext(ctx, arg, groups, env)
 			if argValue.Kind == valueUnknown {
-				if nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, groups, fields, arg); ok {
+				if nodeID, ok := argumentNodeID(ctx.typeInfo, ctx.fieldGroups, groups, arg); ok {
 					argValue = groupValueOf(nodeID)
 				}
 			}
@@ -424,7 +424,7 @@ func callValueBindingsWithEnv(ctx *analysisContext, callee funcInfo, call *ast.C
 	return initialValues, true
 }
 
-func receiverValueBindingWithEnv(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr, groups map[string]analyzer.NodeID, fields localFieldGroups, env env) (string, value, bool) {
+func receiverValueBindingWithEnv(ctx *analysisContext, callee *ast.FuncDecl, call *ast.CallExpr, groups map[string]analyzer.NodeID, env env) (string, value, bool) {
 	if callee.Recv == nil || len(callee.Recv.List) == 0 || len(callee.Recv.List[0].Names) == 0 {
 		return "", value{}, false
 	}
@@ -432,7 +432,7 @@ func receiverValueBindingWithEnv(ctx *analysisContext, callee *ast.FuncDecl, cal
 	if !ok {
 		return "", value{}, false
 	}
-	receiver := evalRouteValueInContext(ctx, selector.X, groups, fields, env)
+	receiver := evalRouteValueInContext(ctx, selector.X, groups, env)
 	if receiver.Kind == valueUnknown {
 		return "", value{}, false
 	}
@@ -450,7 +450,6 @@ func returnedValue(ctx *analysisContext, fn funcInfo, initialValues map[string]v
 	fnCtx.typeInfo = fn.typeInfo
 	fnCtx.fileConsts = fn.fileConsts
 	fnCtx.groups = map[string]analyzer.NodeID{}
-	fnCtx.fields = localFieldGroups{}
 	fnCtx.routeTables = cloneRouteTables(ctx.routeTables)
 	fnCtx.consts = cloneConsts(fn.fileConsts)
 	collectBlockConsts(fn.decl.Body, fnCtx.consts)
@@ -466,7 +465,7 @@ func returnedValue(ctx *analysisContext, fn funcInfo, initialValues map[string]v
 		ret, ok := stmt.(*ast.ReturnStmt)
 		if ok {
 			for _, result := range ret.Results {
-				value := evalRouteValueInContext(&fnCtx, result, fnCtx.groups, fnCtx.fields, fnCtx.env)
+				value := evalRouteValueInContext(&fnCtx, result, fnCtx.groups, fnCtx.env)
 				if value.Kind != valueUnknown {
 					return value, true
 				}
@@ -523,7 +522,7 @@ func receiverValueBinding(ctx *analysisContext, callee *ast.FuncDecl, call *ast.
 	if !ok {
 		return "", value{}, false
 	}
-	receiver := evalRouteValueInContext(ctx, selector.X, ctx.groups, ctx.fields, ctx.env)
+	receiver := evalRouteValueInContext(ctx, selector.X, ctx.groups, ctx.env)
 	if receiver.Kind == valueUnknown {
 		return "", value{}, false
 	}
